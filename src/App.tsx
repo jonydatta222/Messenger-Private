@@ -6,6 +6,7 @@ import { UserProfileModal } from './components/UserProfileModal';
 import { FloatingChatHead } from './components/FloatingChatHead';
 import { CallModal } from './components/CallModal';
 import { EncryptionInfoModal } from './components/EncryptionInfoModal';
+import { CreateGroupModal } from './components/CreateGroupModal';
 import { AuthScreen } from './components/AuthScreen';
 import { 
   getUsers, 
@@ -14,21 +15,45 @@ import {
   logoutUser,
   getConversationsForUser,
   setAuthSession,
-  getMessages
+  getMessages,
+  getGroupsForUser
 } from './services/chatService';
-import { UserProfile, CallState } from './types';
+import { UserProfile, CallState, Group } from './types';
 import { ArrowLeft, MessageSquare, Plus, Lock, Phone } from 'lucide-react';
 
 export default function App() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [lang, setLang] = useState<'bn' | 'en'>('bn');
+
+  // Dark Mode State initialized from localStorage (defaulting to true/dark)
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('e2ee_messenger_theme');
+      return saved ? saved === 'dark' : true;
+    }
+    return true;
+  });
+
+  // Apply 'dark' class to html root element
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('e2ee_messenger_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('e2ee_messenger_theme', 'light');
+    }
+  }, [darkMode]);
 
   // Modals & States
   const [isFloatingHeadActive, setIsFloatingHeadActive] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showAddContactModal, setShowAddContactModal] = useState(false);
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [showEncryptionInfoModal, setShowEncryptionInfoModal] = useState(false);
   const [activeCall, setActiveCall] = useState<CallState | null>(null);
 
@@ -57,11 +82,10 @@ export default function App() {
       const latest = myIncomingMsgs[myIncomingMsgs.length - 1];
 
       if (lastKnownMsgIdRef.current && latest.id !== lastKnownMsgIdRef.current) {
-        // A brand new SMS has arrived! Automatically activate Chat Head & select partner
         setIsFloatingHeadActive(true);
         setSelectedPartnerId(latest.senderId);
+        setSelectedGroupId(null);
 
-        // Send a browser desktop notification if app is hidden/minimized or in background
         if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
           const sender = loadedUsers.find((u) => u.uid === latest.senderId);
           const senderName = sender ? sender.displayName : 'Messenger';
@@ -87,10 +111,16 @@ export default function App() {
     setCurrentUser(currUser);
 
     if (currUser) {
+      const myGrps = getGroupsForUser(currUser.uid);
+      setGroups(myGrps);
+
       checkNewIncomingMessages(currUser, loadedUsers);
 
       if (selectedPartnerId && !loadedUsers.some((u) => u.uid === selectedPartnerId)) {
         setSelectedPartnerId(null);
+      }
+      if (selectedGroupId && !myGrps.some((g) => g.id === selectedGroupId)) {
+        setSelectedGroupId(null);
       }
     }
   };
@@ -102,7 +132,6 @@ export default function App() {
       loadData();
     };
 
-    // Auto show Chat Head when user minimizes or switches away from the app
     const handleAppMinimized = () => {
       const currUser = getCurrentUserProfile();
       if (currUser && document.hidden) {
@@ -132,6 +161,7 @@ export default function App() {
     logoutUser();
     setCurrentUser(null);
     setSelectedPartnerId(null);
+    setSelectedGroupId(null);
   };
 
   if (!currentUser) {
@@ -145,17 +175,7 @@ export default function App() {
   }
 
   const selectedPartner = users.find((u) => u.uid === selectedPartnerId) || null;
-
-  const handleSwitchUser = (uid: string) => {
-    setAuthSession(uid);
-    const updatedUser = users.find((u) => u.uid === uid) || null;
-    setCurrentUser(updatedUser);
-
-    const otherPartner = users.find((u) => u.uid !== uid);
-    if (otherPartner) {
-      setSelectedPartnerId(otherPartner.uid);
-    }
-  };
+  const selectedGroup = groups.find((g) => g.id === selectedGroupId) || null;
 
   const handleAddContact = (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,7 +200,6 @@ export default function App() {
       return;
     }
 
-    // Check if adding own number
     const currentPhoneClean = (currentUser?.phone || '').replace(/[\s-]/g, '').trim();
     if (currentPhoneClean && currentPhoneClean === cleanPhone) {
       setAddContactError(
@@ -191,7 +210,6 @@ export default function App() {
       return;
     }
 
-    // Check if user with this phone number exists
     const normalizePhone = (p: string) => p.replace(/[\s\-\+\(\)]/g, '').replace(/^88/, '');
     const searchNorm = normalizePhone(cleanPhone);
 
@@ -203,6 +221,7 @@ export default function App() {
 
     if (existingUser) {
       setSelectedPartnerId(existingUser.uid);
+      setSelectedGroupId(null);
       setNewContactPhone('');
       setAddContactError(null);
       setShowAddContactModal(false);
@@ -227,15 +246,16 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-slate-950 font-sans text-slate-100 overflow-hidden select-none">
-      {/* Top Header - Only shown when no active chat is selected */}
-      {!selectedPartnerId && (
+    <div className="flex flex-col h-screen w-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 overflow-hidden select-none transition-colors">
+      {/* Top Header - Only shown when no active chat or group is selected */}
+      {!selectedPartnerId && !selectedGroupId && (
         <Header
           currentUser={currentUser}
           lang={lang}
           onToggleLang={() => setLang(lang === 'bn' ? 'en' : 'bn')}
           onOpenProfile={() => setShowProfileModal(true)}
-          onOpenAddContact={() => setShowAddContactModal(true)}
+          darkMode={darkMode}
+          onToggleDarkMode={() => setDarkMode((prev) => !prev)}
           isFloatingHeadActive={isFloatingHeadActive}
           onToggleFloatingHead={() => setIsFloatingHeadActive(!isFloatingHeadActive)}
           onOpenEncryptionInfo={() => setShowEncryptionInfoModal(true)}
@@ -244,28 +264,42 @@ export default function App() {
       )}
 
       {/* Main Workspace Body */}
-      <div className="flex-1 flex overflow-hidden relative bg-black">
+      <div className="flex-1 flex overflow-hidden relative bg-slate-50 dark:bg-slate-950">
         {/* Left Contact List (Shown when no chat is selected) */}
-        {!selectedPartnerId ? (
+        {!selectedPartnerId && !selectedGroupId ? (
           <div className="w-full h-full">
             <ChatList
               users={users}
               currentUser={currentUser}
               selectedPartnerId={selectedPartnerId}
-              onSelectPartner={(partnerId) => setSelectedPartnerId(partnerId)}
+              onSelectPartner={(partnerId) => {
+                setSelectedPartnerId(partnerId);
+                setSelectedGroupId(null);
+              }}
+              selectedGroupId={selectedGroupId}
+              onSelectGroup={(groupId) => {
+                setSelectedGroupId(groupId);
+                setSelectedPartnerId(null);
+              }}
               onOpenAddContact={() => setShowAddContactModal(true)}
+              onOpenCreateGroup={() => setShowCreateGroupModal(true)}
               lang={lang}
             />
           </div>
         ) : (
-          /* Fullscreen Chat Screen when a partner is selected */
+          /* Fullscreen Chat Screen when a partner or group is selected */
           <div className="w-full h-full flex-1">
-            {selectedPartner && (
+            {(selectedPartner || selectedGroup) && (
               <ChatScreen
                 currentUser={currentUser}
                 partner={selectedPartner}
+                group={selectedGroup}
+                allUsers={users}
                 onStartCall={handleStartCall}
-                onBack={() => setSelectedPartnerId(null)}
+                onBack={() => {
+                  setSelectedPartnerId(null);
+                  setSelectedGroupId(null);
+                }}
                 onOpenFloatingHead={() => setIsFloatingHeadActive(true)}
                 lang={lang}
               />
@@ -280,8 +314,26 @@ export default function App() {
           currentUser={currentUser}
           partners={users.filter((u) => u.uid !== currentUser.uid)}
           selectedPartner={selectedPartner}
-          onSelectPartner={(pid) => setSelectedPartnerId(pid)}
+          onSelectPartner={(pid) => {
+            setSelectedPartnerId(pid);
+            setSelectedGroupId(null);
+          }}
           onCloseFloatingHead={() => setIsFloatingHeadActive(false)}
+          lang={lang}
+        />
+      )}
+
+      {/* Create Group Modal */}
+      {showCreateGroupModal && (
+        <CreateGroupModal
+          currentUser={currentUser}
+          allUsers={users}
+          onClose={() => setShowCreateGroupModal(false)}
+          onGroupCreated={(createdGroup) => {
+            loadData();
+            setSelectedGroupId(createdGroup.id);
+            setSelectedPartnerId(null);
+          }}
           lang={lang}
         />
       )}
@@ -310,11 +362,11 @@ export default function App() {
 
       {/* Add New Contact Modal */}
       {showAddContactModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl space-y-4 animate-fadeIn relative">
-            <div className="flex items-center justify-between text-white border-b border-slate-800 pb-3">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl space-y-4 animate-fadeIn relative text-slate-900 dark:text-slate-100">
+            <div className="flex items-center justify-between text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800 pb-3">
               <h3 className="font-bold text-base flex items-center gap-2">
-                <Plus className="w-5 h-5 text-blue-400" />
+                <Plus className="w-5 h-5 text-orange-500" />
                 {lang === 'bn' ? 'নতুন কন্টাক্ট যোগ করুন' : 'Add New Contact'}
               </h3>
               <button
@@ -324,13 +376,13 @@ export default function App() {
                   setAddContactError(null);
                   setNewContactPhone('');
                 }}
-                className="text-slate-400 hover:text-white p-1 rounded-full hover:bg-slate-800 transition-colors cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <p className="text-xs text-slate-300 leading-relaxed">
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
               {lang === 'bn'
                 ? 'যার সাথে চ্যাট করতে চান তার ফোন নাম্বারটি নিচে প্রদান করুন:'
                 : 'Enter the phone number of the person you want to chat with:'}
@@ -338,8 +390,8 @@ export default function App() {
 
             <form onSubmit={handleAddContact} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5 flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-blue-400" />
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-orange-500" />
                   {lang === 'bn' ? 'ফোন নাম্বার' : 'Phone Number'}
                 </label>
                 <input
@@ -352,19 +404,19 @@ export default function App() {
                   placeholder={lang === 'bn' ? 'যেমন: 01700000000' : 'e.g. 01700000000'}
                   autoFocus
                   required
-                  className="w-full bg-slate-800/90 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono tracking-wide"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-orange-500 font-mono tracking-wide"
                 />
               </div>
 
               {addContactError && (
-                <div className="p-2.5 bg-red-950/80 border border-red-800/80 text-red-200 text-xs rounded-xl flex items-center gap-2">
+                <div className="p-2.5 bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 text-xs rounded-xl flex items-center gap-2 font-medium">
                   <span>⚠️</span>
                   <span>{addContactError}</span>
                 </div>
               )}
 
-              <div className="p-3 bg-slate-950 rounded-2xl border border-slate-800/90 text-[11px] text-slate-400 flex items-center gap-2.5">
-                <Lock className="w-4 h-4 text-emerald-400 shrink-0" />
+              <div className="p-3 bg-orange-50/70 dark:bg-orange-950/40 rounded-2xl border border-orange-100 dark:border-orange-900/50 text-[11px] text-slate-600 dark:text-slate-300 flex items-center gap-2.5">
+                <Lock className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 <span className="leading-tight">
                   {lang === 'bn'
                     ? 'নাম্বারটি দিয়ে সরাসরি নিরাপদ এন্ড-টু-এন্ড এনক্রিপ্টেড চ্যাট শুরু হবে।'
@@ -380,13 +432,13 @@ export default function App() {
                     setAddContactError(null);
                     setNewContactPhone('');
                   }}
-                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                  className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
                 >
                   {lang === 'bn' ? 'বাতিল' : 'Cancel'}
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 cursor-pointer flex items-center gap-1.5"
+                  className="px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-orange-500/20 cursor-pointer flex items-center gap-1.5"
                 >
                   <MessageSquare className="w-4 h-4" />
                   <span>{lang === 'bn' ? 'চ্যাট শুরু করুন' : 'Start Chat'}</span>

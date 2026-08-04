@@ -13,11 +13,22 @@ export interface UserProfile {
   bio?: string;
 }
 
+export interface Group {
+  id: string;
+  name: string;
+  description?: string;
+  photoURL: string;
+  createdBy: string; // UID of user who created the group
+  createdAt: number;
+  members: string[]; // List of member UIDs
+}
+
 export interface Message {
   id: string;
   senderId: string;
-  receiverId: string;
-  text?: string;        // Encrypted base64 payload string
+  receiverId: string; // User UID or Group ID
+  groupId?: string;    // Set if this is a group message
+  text?: string;        // Encrypted base64 payload string or plain message text
   imageUrl?: string;    // Image URL or Base64 Data URL
   audioUrl?: string;    // Audio voice recording Base64 Data URL
   audioDuration?: number; // Duration in seconds
@@ -27,6 +38,13 @@ export interface Message {
   deletedForUsers?: string[]; // User UIDs for whom this message is deleted locally
   isEdited?: boolean;
   isDeletedForEveryone?: boolean;
+  replyTo?: {
+    id: string;
+    senderName?: string;
+    text?: string;
+    imageUrl?: string;
+    audioUrl?: string;
+  };
 }
 
 export interface CallState {

@@ -1,9 +1,10 @@
-import { Message, UserProfile } from '../types';
+import { Message, UserProfile, Group } from '../types';
 import { generateKeyPair, encryptMessage, decryptMessage } from './encryptionService';
 
 const STORAGE_MESSAGES_KEY = 'e2ee_messenger_messages';
 const STORAGE_USERS_KEY = 'e2ee_messenger_users';
 const STORAGE_AUTH_SESSION_KEY = 'e2ee_messenger_auth_session_uid';
+const STORAGE_GROUPS_KEY = 'e2ee_messenger_groups';
 
 // Default users array (now empty as demo accounts are removed)
 export const DEFAULT_USERS: UserProfile[] = [];
@@ -227,7 +228,8 @@ export const sendTextMessage = async (
   receiverId: string,
   text: string,
   receiverPublicKey: string,
-  myPrivateKey: string
+  myPrivateKey: string,
+  replyTo?: Message['replyTo']
 ): Promise<Message> => {
   const messages = getMessages();
   const encryptedText = encryptMessage(text, receiverPublicKey, myPrivateKey);
@@ -240,6 +242,7 @@ export const sendTextMessage = async (
     timestamp: Date.now(),
     read: false,
     type: 'text',
+    replyTo,
   };
 
   messages.push(newMessage);
@@ -253,7 +256,8 @@ export const sendTextMessage = async (
 export const sendImageMessage = async (
   senderId: string,
   receiverId: string,
-  imageUrl: string
+  imageUrl: string,
+  replyTo?: Message['replyTo']
 ): Promise<Message> => {
   const messages = getMessages();
 
@@ -265,6 +269,7 @@ export const sendImageMessage = async (
     timestamp: Date.now(),
     read: false,
     type: 'image',
+    replyTo,
   };
 
   messages.push(newMessage);
@@ -279,7 +284,8 @@ export const sendVoiceMessage = async (
   senderId: string,
   receiverId: string,
   audioUrl: string,
-  duration: number
+  duration: number,
+  replyTo?: Message['replyTo']
 ): Promise<Message> => {
   const messages = getMessages();
 
@@ -292,6 +298,7 @@ export const sendVoiceMessage = async (
     timestamp: Date.now(),
     read: false,
     type: 'voice',
+    replyTo,
   };
 
   messages.push(newMessage);
@@ -461,9 +468,19 @@ export const deleteForMe = (messageId: string, userId: string) => {
 // Delete a message for everyone ("Delete for everyone")
 export const deleteForEveryone = (messageId: string) => {
   const messages = getMessages();
-  const updated = messages.filter((m) => m.id !== messageId);
-  localStorage.setItem(STORAGE_MESSAGES_KEY, JSON.stringify(updated));
-  broadcastChange();
+  const index = messages.findIndex((m) => m.id === messageId);
+  if (index !== -1) {
+    messages[index] = {
+      ...messages[index],
+      isDeletedForEveryone: true,
+      text: undefined,
+      imageUrl: undefined,
+      audioUrl: undefined,
+      replyTo: undefined,
+    };
+    localStorage.setItem(STORAGE_MESSAGES_KEY, JSON.stringify(messages));
+    broadcastChange();
+  }
 };
 
 // Legacy deleteMessage fallback
@@ -542,3 +559,264 @@ export const getLastMessage = (currentUserId: string, partnerId: string): Messag
   filtered.sort((a, b) => b.timestamp - a.timestamp);
   return filtered[0];
 };
+
+// ==================== GROUP CHAT SERVICES ====================
+
+// Get all stored groups (or seed initial default groups)
+export const getGroups = (): Group[] => {
+  const stored = localStorage.getItem(STORAGE_GROUPS_KEY);
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch {
+      // fallback
+    }
+  }
+
+  // Initial seed group
+  const seedGroups: Group[] = [
+    {
+      id: 'group_general',
+      name: 'সাধারণ আড্ডাঘর 💬',
+      description: 'সকল ব্যবহারকারীদের জন্য উন্মুক্ত আলোচনা গ্রুপ',
+      photoURL: 'https://api.dicebear.com/7.x/identicon/svg?seed=GeneralAdda',
+      createdBy: 'system',
+      createdAt: Date.now() - 86400000,
+      members: [], // empty means all registered users belong
+    },
+  ];
+
+  localStorage.setItem(STORAGE_GROUPS_KEY, JSON.stringify(seedGroups));
+  return seedGroups;
+};
+
+// Get groups that current user is part of (or public groups)
+export const getGroupsForUser = (currentUserId: string): Group[] => {
+  const allGroups = getGroups();
+  return allGroups.filter(
+    (g) => g.members.length === 0 || g.members.includes(currentUserId) || g.createdBy === currentUserId
+  );
+};
+
+// Create a new Group
+export const createGroup = (
+  name: string,
+  description: string,
+  memberIds: string[],
+  creatorId: string,
+  photoURL?: string
+): Group => {
+  const groups = getGroups();
+  const allMembers = Array.from(new Set([...memberIds, creatorId]));
+
+  const newGroup: Group = {
+    id: `group_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    name: name.trim(),
+    description: description.trim() || 'গ্রুপ চ্যাটরুম',
+    photoURL: photoURL || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(name.trim())}`,
+    createdBy: creatorId,
+    createdAt: Date.now(),
+    members: allMembers,
+  };
+
+  groups.push(newGroup);
+  localStorage.setItem(STORAGE_GROUPS_KEY, JSON.stringify(groups));
+
+  // Send system welcome message in group
+  const messages = getMessages();
+  messages.push({
+    id: `msg_sys_${Date.now()}`,
+    senderId: creatorId,
+    receiverId: newGroup.id,
+    groupId: newGroup.id,
+    text: `🎉 "${newGroup.name}" গ্রুপটি তৈরি করা হয়েছে।`,
+    timestamp: Date.now(),
+    read: true,
+    type: 'text',
+  });
+  localStorage.setItem(STORAGE_MESSAGES_KEY, JSON.stringify(messages));
+
+  broadcastChange();
+  return newGroup;
+};
+
+// Delete a Group
+export const deleteGroup = (groupId: string) => {
+  const groups = getGroups();
+  const updated = groups.filter((g) => g.id !== groupId);
+  localStorage.setItem(STORAGE_GROUPS_KEY, JSON.stringify(updated));
+
+  // Delete all group messages
+  const messages = getMessages();
+  const updatedMessages = messages.filter((m) => m.groupId !== groupId && m.receiverId !== groupId);
+  localStorage.setItem(STORAGE_MESSAGES_KEY, JSON.stringify(updatedMessages));
+
+  broadcastChange();
+};
+
+// Add members to existing Group
+export const addMembersToGroup = (groupId: string, newMemberIds: string[]) => {
+  const groups = getGroups();
+  const idx = groups.findIndex((g) => g.id === groupId);
+  if (idx !== -1) {
+    const updatedMembers = Array.from(new Set([...groups[idx].members, ...newMemberIds]));
+    groups[idx].members = updatedMembers;
+    localStorage.setItem(STORAGE_GROUPS_KEY, JSON.stringify(groups));
+    broadcastChange();
+  }
+};
+
+// Remove a member or leave group
+export const removeMemberFromGroup = (groupId: string, memberId: string) => {
+  const groups = getGroups();
+  const idx = groups.findIndex((g) => g.id === groupId);
+  if (idx !== -1) {
+    groups[idx].members = groups[idx].members.filter((m) => m !== memberId);
+    localStorage.setItem(STORAGE_GROUPS_KEY, JSON.stringify(groups));
+    broadcastChange();
+  }
+};
+
+// Send Text Message to Group
+export const sendGroupTextMessage = async (
+  senderId: string,
+  groupId: string,
+  text: string,
+  replyTo?: Message['replyTo']
+): Promise<Message> => {
+  const messages = getMessages();
+  const newMessage: Message = {
+    id: `msg_grp_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+    senderId,
+    receiverId: groupId,
+    groupId,
+    text,
+    timestamp: Date.now(),
+    read: true,
+    type: 'text',
+    replyTo,
+  };
+
+  messages.push(newMessage);
+  localStorage.setItem(STORAGE_MESSAGES_KEY, JSON.stringify(messages));
+  broadcastChange();
+
+  return newMessage;
+};
+
+// Send Image Message to Group
+export const sendGroupImageMessage = async (
+  senderId: string,
+  groupId: string,
+  imageUrl: string,
+  replyTo?: Message['replyTo']
+): Promise<Message> => {
+  const messages = getMessages();
+  const newMessage: Message = {
+    id: `msg_grp_img_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+    senderId,
+    receiverId: groupId,
+    groupId,
+    imageUrl,
+    timestamp: Date.now(),
+    read: true,
+    type: 'image',
+    replyTo,
+  };
+
+  messages.push(newMessage);
+  localStorage.setItem(STORAGE_MESSAGES_KEY, JSON.stringify(messages));
+  broadcastChange();
+
+  return newMessage;
+};
+
+// Send Voice Note Message to Group
+export const sendGroupVoiceMessage = async (
+  senderId: string,
+  groupId: string,
+  audioUrl: string,
+  duration: number,
+  replyTo?: Message['replyTo']
+): Promise<Message> => {
+  const messages = getMessages();
+  const newMessage: Message = {
+    id: `msg_grp_aud_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+    senderId,
+    receiverId: groupId,
+    groupId,
+    audioUrl,
+    audioDuration: duration,
+    timestamp: Date.now(),
+    read: true,
+    type: 'voice',
+    replyTo,
+  };
+
+  messages.push(newMessage);
+  localStorage.setItem(STORAGE_MESSAGES_KEY, JSON.stringify(messages));
+  broadcastChange();
+
+  return newMessage;
+};
+
+// Subscribe to real-time group messages
+export const subscribeToGroupMessages = (
+  groupId: string,
+  currentUserId: string,
+  onMessagesUpdate: (messages: Message[]) => void
+) => {
+  const fetchAndFilter = () => {
+    const allMessages = getMessages();
+    const filtered = allMessages.filter(
+      (m) =>
+        !m.deletedForUsers?.includes(currentUserId) &&
+        (m.groupId === groupId || m.receiverId === groupId)
+    );
+    filtered.sort((a, b) => a.timestamp - b.timestamp);
+    onMessagesUpdate(filtered);
+  };
+
+  fetchAndFilter();
+
+  const handleUpdate = () => {
+    fetchAndFilter();
+  };
+
+  if (broadcastChannel) {
+    broadcastChannel.addEventListener('message', handleUpdate);
+  }
+
+  window.addEventListener('e2ee_messenger_updated', handleUpdate);
+  window.addEventListener('storage', handleUpdate);
+
+  return () => {
+    if (broadcastChannel) {
+      broadcastChannel.removeEventListener('message', handleUpdate);
+    }
+    window.removeEventListener('e2ee_messenger_updated', handleUpdate);
+    window.removeEventListener('storage', handleUpdate);
+  };
+};
+
+// Get Last Message for a Group
+export const getLastGroupMessage = (groupId: string): Message | null => {
+  const messages = getMessages();
+  const filtered = messages.filter((m) => m.groupId === groupId || m.receiverId === groupId);
+  if (filtered.length === 0) return null;
+  filtered.sort((a, b) => b.timestamp - a.timestamp);
+  return filtered[0];
+};
+
+// Get Unread count for a group
+export const getUnreadGroupCount = (groupId: string, currentUserId: string): number => {
+  const messages = getMessages();
+  return messages.filter(
+    (m) =>
+      !m.deletedForUsers?.includes(currentUserId) &&
+      (m.groupId === groupId || m.receiverId === groupId) &&
+      m.senderId !== currentUserId &&
+      !m.read
+  ).length;
+};
+

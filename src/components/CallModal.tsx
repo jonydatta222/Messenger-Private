@@ -60,8 +60,8 @@ export const CallModal: React.FC<CallModalProps> = ({
             <div className="absolute w-32 h-32 rounded-full bg-blue-500/20 animate-ping" />
           )}
           <img
-            src={partner.photoURL}
-            alt={partner.displayName}
+            src={partner?.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
+            alt={partner?.displayName || 'User'}
             className="w-24 h-24 rounded-full object-cover ring-4 ring-slate-800 shadow-xl relative z-10"
           />
         </div>
