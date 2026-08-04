@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, Lock, Ban, MessageSquare, ChevronDown, Users, Trash2, CornerUpLeft } from 'lucide-react';
+import { X, Send, Lock, Ban, MessageSquare, ChevronDown, Users, Trash2, CornerUpLeft, HelpCircle, ExternalLink, Layers, Settings, Bell, CheckCircle2 } from 'lucide-react';
 import { UserProfile, Message } from '../types';
 import { getUnreadCount, sendTextMessage, subscribeToMessages, markMessagesAsRead, getConversationsForUser } from '../services/chatService';
 import { decryptMessage } from '../services/encryptionService';
+
 
 interface SwipeableChatHeadMessageProps {
   msg: Message;
@@ -236,6 +237,54 @@ export const FloatingChatHead: React.FC<FloatingChatHeadProps> = ({
   });
 
   const bubbleRef = useRef<HTMLDivElement>(null);
+  const [showOverlayGuide, setShowOverlayGuide] = useState(false);
+
+  const handlePopoutWindow = () => {
+    const width = 380;
+    const height = 540;
+    const left = (window.screen.width - width) / 2;
+    const top = (window.screen.height - height) / 2;
+    
+    // Check if Picture in Picture API is available for document/video
+    if ('documentPictureInPicture' in window) {
+      try {
+        (window as any).documentPictureInPicture.requestWindow({
+          width: 360,
+          height: 520,
+        }).then((pipWin: Window) => {
+          const style = pipWin.document.createElement('style');
+          style.textContent = `
+            body { margin: 0; padding: 0; font-family: system-ui, sans-serif; background: #0f172a; color: #fff; }
+            .pip-container { padding: 16px; text-align: center; }
+            .pip-title { color: #f97316; font-weight: bold; margin-bottom: 8px; }
+          `;
+          pipWin.document.head.appendChild(style);
+          pipWin.document.body.innerHTML = `
+            <div class="pip-container">
+              <div class="pip-title">Floating Chat Head Active</div>
+              <p style="font-size:12px; color:#94a3b8;">Pop-out Chat is floating on top of all Android apps.</p>
+            </div>
+          `;
+          return;
+        }).catch(() => {
+          openPopoutFallback(width, height, left, top);
+        });
+        return;
+      } catch {
+        // Fallback
+      }
+    }
+    openPopoutFallback(width, height, left, top);
+  };
+
+  const openPopoutFallback = (width: number, height: number, left: number, top: number) => {
+    window.open(
+      window.location.href,
+      'SecureMessengerChatHead',
+      `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=no,status=no`
+    );
+  };
+
 
   // Sync selected partner prop
   useEffect(() => {
@@ -590,14 +639,31 @@ export const FloatingChatHead: React.FC<FloatingChatHeadProps> = ({
               </div>
             )}
 
-            <button
-              onClick={() => setIsOpen(false)}
-              className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              title={lang === 'bn' ? 'মিনিমাইজ করুন' : 'Minimize'}
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setShowOverlayGuide(true)}
+                className="p-1.5 rounded-full text-slate-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                title={lang === 'bn' ? 'অ্যান্ড্রয়েড ওভারলে গাইড' : 'Android Overlay Guide'}
+              >
+                <HelpCircle className="w-4 h-4 text-orange-400" />
+              </button>
+              <button
+                onClick={handlePopoutWindow}
+                className="p-1.5 rounded-full text-slate-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                title={lang === 'bn' ? 'পপ-আউট ভাসমান উইন্ডো (Picture-in-Picture)' : 'Pop-out Floating Window (PiP)'}
+              >
+                <ExternalLink className="w-4 h-4 text-orange-500" />
+              </button>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                title={lang === 'bn' ? 'মিনিমাইজ করুন' : 'Minimize'}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
+
 
           {/* Contact Switcher Dropdown Sheet */}
           {showSelectorDropdown && (
@@ -780,6 +846,88 @@ export const FloatingChatHead: React.FC<FloatingChatHeadProps> = ({
           <X className="w-3 h-3" />
         </button>
       </div>
+
+      {/* Android Overlay Permission & Floating Chat Head Guide Modal */}
+      {showOverlayGuide && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col text-slate-100 p-5">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-3">
+              <h3 className="font-bold text-sm text-orange-400 flex items-center gap-2">
+                <Layers className="w-5 h-5 text-orange-500" />
+                <span>{lang === 'bn' ? 'অ্যান্ড্রয়েড ওভারলে ও চ্যাট হেড গাইড' : 'Android Overlay & Chat Head Guide'}</span>
+              </h3>
+              <button
+                onClick={() => setShowOverlayGuide(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs text-slate-300 overflow-y-auto max-h-[70vh] pr-1">
+              <div className="bg-orange-500/10 border border-orange-500/20 rounded-2xl p-3.5">
+                <h4 className="font-bold text-orange-300 mb-1 flex items-center gap-1.5 text-xs">
+                  <Settings className="w-4 h-4 text-orange-400" />
+                  <span>{lang === 'bn' ? '১. ডিসপ্লে ওভার আদার অ্যাপস পারমিশন:' : '1. Display Over Other Apps Permission:'}</span>
+                </h4>
+                <p className="leading-relaxed text-[11px] text-slate-300">
+                  {lang === 'bn'
+                    ? 'অ্যান্ড্রয়েড APK মিনিমাইজ বা অন্য অ্যাপ্সে থাকার সময় চ্যাট হেড ভাসিয়ে রাখতে:'
+                    : 'To keep chat heads visible when app is minimized or using other apps:'}
+                </p>
+                <ol className="list-decimal list-inside mt-2 space-y-1 text-[11px] text-slate-200 font-medium">
+                  <li>{lang === 'bn' ? 'ফোনের Settings > Apps > Secure Messenger-এ যান।' : 'Open Android Settings > Apps > Secure Messenger.'}</li>
+                  <li>{lang === 'bn' ? '"Display over other apps" বা "Draw over other apps" অপশনটি ALLOW (অন) করুন।' : 'Enable "Display over other apps" or "Draw over other apps".'}</li>
+                </ol>
+              </div>
+
+              <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-3.5">
+                <h4 className="font-bold text-orange-300 mb-1 flex items-center gap-1.5 text-xs">
+                  <ExternalLink className="w-4 h-4 text-orange-400" />
+                  <span>{lang === 'bn' ? '২. পপ-আউট উইন্ডো (Picture-in-Picture):' : '2. Pop-out Floating Window (PiP):'}</span>
+                </h4>
+                <p className="leading-relaxed text-[11px] text-slate-300">
+                  {lang === 'bn'
+                    ? 'চ্যাট হেডের ওপরের ডানপাশের পপ-আউট (↗) আইকনে ক্লিক করলে এটি মোবাইল বা পিসির সব অ্যাপসের ওপরে আলাদা ভাসমান উইন্ডো হয়ে থাকবে।'
+                    : 'Clicking the pop-out icon (↗) launches a picture-in-picture window floating above all apps.'}
+                </p>
+                <button
+                  onClick={() => {
+                    setShowOverlayGuide(false);
+                    handlePopoutWindow();
+                  }}
+                  className="mt-2.5 w-full py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-md transition-colors cursor-pointer"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>{lang === 'bn' ? 'এখনই পপ-আউট উইন্ডো অপেন করুন' : 'Launch Pop-out Window Now'}</span>
+                </button>
+              </div>
+
+              <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-3.5">
+                <h4 className="font-bold text-orange-300 mb-1 flex items-center gap-1.5 text-xs">
+                  <Bell className="w-4 h-4 text-orange-400" />
+                  <span>{lang === 'bn' ? '৩. ব্যাকগ্রাউন্ড নোটিফিকেশন রিপ্লাই:' : '3. Background Notification Reply:'}</span>
+                </h4>
+                <p className="leading-relaxed text-[11px] text-slate-300">
+                  {lang === 'bn'
+                    ? 'অ্যাপ ব্যাকগ্রাউন্ডে থাকলে যেকোনো নতুন মেসেজে তাৎক্ষণিক পপ-আপ নোটিফিকেশন আসবে যা থেকে মেসেজ পড়া ও রিপ্লাই দেয়া সম্ভব।'
+                    : 'System notification popups will fire when new messages arrive, allowing instant replies from the notification bar.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-800 flex justify-end">
+              <button
+                onClick={() => setShowOverlayGuide(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>{lang === 'bn' ? 'বুঝেছি' : 'Got it'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

@@ -39,35 +39,33 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setLoading(true);
 
-    setTimeout(() => {
-      try {
-        if (mode === 'login') {
-          const result = loginUser(phone, password);
-          if (result.success && result.user) {
-            onAuthSuccess(result.user);
-          } else {
-            setErrorMsg(result.error || (lang === 'bn' ? 'লগইন ব্যর্থ হয়েছে' : 'Login failed'));
-          }
+    try {
+      if (mode === 'login') {
+        const result = await loginUser(phone, password);
+        if (result.success && result.user) {
+          onAuthSuccess(result.user);
         } else {
-          const result = signUpUser(phone, password, displayName, email);
-          if (result.success && result.user) {
-            onAuthSuccess(result.user);
-          } else {
-            setErrorMsg(result.error || (lang === 'bn' ? 'সাইন আপ ব্যর্থ হয়েছে' : 'Sign up failed'));
-          }
+          setErrorMsg(result.error || (lang === 'bn' ? 'লগইন ব্যর্থ হয়েছে' : 'Login failed'));
         }
-      } catch (err: any) {
-        console.error('Auth submit error:', err);
-        setErrorMsg(err?.message || (lang === 'bn' ? 'সাইন আপে সমস্যা হয়েছে। আবার চেষ্টা করুন।' : 'Authentication failed. Please try again.'));
-      } finally {
-        setLoading(false);
+      } else {
+        const result = await signUpUser(phone, password, displayName, email);
+        if (result.success && result.user) {
+          onAuthSuccess(result.user);
+        } else {
+          setErrorMsg(result.error || (lang === 'bn' ? 'সাইন আপ ব্যর্থ হয়েছে' : 'Sign up failed'));
+        }
       }
-    }, 400);
+    } catch (err: any) {
+      console.error('Auth submit error:', err);
+      setErrorMsg(err?.message || (lang === 'bn' ? 'সাইন আপে সমস্যা হয়েছে। আবার চেষ্টা করুন।' : 'Authentication failed. Please try again.'));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
