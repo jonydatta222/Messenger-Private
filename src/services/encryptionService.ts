@@ -5,11 +5,28 @@ import { encodeBase64, decodeBase64, encodeUTF8, decodeUTF8 } from 'tweetnacl-ut
  * Generates a new TweetNaCl Curve25519 Box KeyPair for End-to-End Encryption
  */
 export const generateKeyPair = () => {
-  const keyPair = nacl.box.keyPair();
-  return {
-    publicKey: encodeBase64(keyPair.publicKey),
-    secretKey: encodeBase64(keyPair.secretKey),
-  };
+  try {
+    const keyPair = nacl.box.keyPair();
+    return {
+      publicKey: encodeBase64(keyPair.publicKey),
+      secretKey: encodeBase64(keyPair.secretKey),
+    };
+  } catch (err) {
+    console.error('PRNG KeyPair generation error, using fallback random generator:', err);
+    const secretSeed = new Uint8Array(32);
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+      window.crypto.getRandomValues(secretSeed);
+    } else {
+      for (let i = 0; i < 32; i++) {
+        secretSeed[i] = Math.floor(Math.random() * 256);
+      }
+    }
+    const keyPair = nacl.box.keyPair.fromSecretKey(secretSeed);
+    return {
+      publicKey: encodeBase64(keyPair.publicKey),
+      secretKey: encodeBase64(keyPair.secretKey),
+    };
+  }
 };
 
 /**

@@ -45,22 +45,28 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     setLoading(true);
 
     setTimeout(() => {
-      if (mode === 'login') {
-        const result = loginUser(phone, password);
-        if (result.success && result.user) {
-          onAuthSuccess(result.user);
+      try {
+        if (mode === 'login') {
+          const result = loginUser(phone, password);
+          if (result.success && result.user) {
+            onAuthSuccess(result.user);
+          } else {
+            setErrorMsg(result.error || (lang === 'bn' ? 'লগইন ব্যর্থ হয়েছে' : 'Login failed'));
+          }
         } else {
-          setErrorMsg(result.error || 'Login failed');
+          const result = signUpUser(phone, password, displayName, email);
+          if (result.success && result.user) {
+            onAuthSuccess(result.user);
+          } else {
+            setErrorMsg(result.error || (lang === 'bn' ? 'সাইন আপ ব্যর্থ হয়েছে' : 'Sign up failed'));
+          }
         }
-      } else {
-        const result = signUpUser(phone, password, displayName, email);
-        if (result.success && result.user) {
-          onAuthSuccess(result.user);
-        } else {
-          setErrorMsg(result.error || 'Sign up failed');
-        }
+      } catch (err: any) {
+        console.error('Auth submit error:', err);
+        setErrorMsg(err?.message || (lang === 'bn' ? 'সাইন আপে সমস্যা হয়েছে। আবার চেষ্টা করুন।' : 'Authentication failed. Please try again.'));
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }, 400);
   };
 

@@ -84,42 +84,47 @@ export const signUpUser = (
   displayName: string,
   email?: string
 ): { success: boolean; user?: UserProfile; error?: string } => {
-  const cleanPhone = (phone || '').replace(/[\s-]/g, '').trim();
-  if (!cleanPhone) {
-    return { success: false, error: 'বৈধ ফোন নাম্বার টাইপ করুন (Please enter a valid phone number)' };
-  }
-  if (!password || password.length < 4) {
-    return { success: false, error: 'পাসওয়ার্ড অন্তত ৪ অক্ষরের হতে হবে (Password must be at least 4 characters)' };
-  }
-  if (!displayName || !displayName.trim()) {
-    return { success: false, error: 'আপনার নাম প্রদান করুন (Please enter your name)' };
-  }
+  try {
+    const cleanPhone = (phone || '').replace(/[\s-]/g, '').trim();
+    if (!cleanPhone) {
+      return { success: false, error: 'বৈধ ফোন নাম্বার টাইপ করুন (Please enter a valid phone number)' };
+    }
+    if (!password || password.length < 4) {
+      return { success: false, error: 'পাসওয়ার্ড অন্তত ৪ অক্ষরের হতে হবে (Password must be at least 4 characters)' };
+    }
+    if (!displayName || !displayName.trim()) {
+      return { success: false, error: 'আপনার নাম প্রদান করুন (Please enter your name)' };
+    }
 
-  const users = getUsers();
-  const existingUser = users.find((u) => (u.phone || '').replace(/[\s-]/g, '') === cleanPhone);
-  if (existingUser) {
-    return { success: false, error: 'এই ফোন নাম্বার দিয়ে আগেই একাউন্ট খোলা হয়েছে (Phone number already registered)' };
+    const users = getUsers();
+    const existingUser = users.find((u) => (u.phone || '').replace(/[\s-]/g, '') === cleanPhone);
+    if (existingUser) {
+      return { success: false, error: 'এই ফোন নাম্বার দিয়ে আগেই একাউন্ট খোলা হয়েছে (Phone number already registered)' };
+    }
+
+    const keys = generateKeyPair();
+    const newUser: UserProfile = {
+      uid: `user_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      phone: cleanPhone,
+      password,
+      displayName: displayName.trim(),
+      email: email?.trim() || `${cleanPhone}@messenger.app`,
+      photoURL: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(displayName.trim())}`,
+      publicKey: keys.publicKey,
+      secretKey: keys.secretKey,
+      createdAt: Date.now(),
+      status: 'online',
+      bio: '🔐 E2EE Secured Messenger User',
+    };
+
+    users.push(newUser);
+    localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(users));
+    setAuthSession(newUser.uid);
+    return { success: true, user: newUser };
+  } catch (err: any) {
+    console.error('Sign up error:', err);
+    return { success: false, error: err?.message || 'সাইন আপে সমস্যা হয়েছে। আবার চেষ্টা করুন।' };
   }
-
-  const keys = generateKeyPair();
-  const newUser: UserProfile = {
-    uid: `user_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-    phone: cleanPhone,
-    password,
-    displayName: displayName.trim(),
-    email: email?.trim() || `${cleanPhone}@messenger.app`,
-    photoURL: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(displayName)}`,
-    publicKey: keys.publicKey,
-    secretKey: keys.secretKey,
-    createdAt: Date.now(),
-    status: 'online',
-    bio: '🔐 E2EE Secured Messenger User',
-  };
-
-  users.push(newUser);
-  localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(users));
-  setAuthSession(newUser.uid);
-  return { success: true, user: newUser };
 };
 
 // Login User
@@ -127,20 +132,25 @@ export const loginUser = (
   phone: string,
   password: string
 ): { success: boolean; user?: UserProfile; error?: string } => {
-  const cleanPhone = (phone || '').replace(/[\s-]/g, '').trim();
-  const users = getUsers();
+  try {
+    const cleanPhone = (phone || '').replace(/[\s-]/g, '').trim();
+    const users = getUsers();
 
-  const user = users.find((u) => (u.phone || '').replace(/[\s-]/g, '') === cleanPhone);
-  if (!user) {
-    return { success: false, error: 'এই ফোন নাম্বারে কোন একাউন্ট পাওয়া যায়নি (Phone number not registered)' };
+    const user = users.find((u) => (u.phone || '').replace(/[\s-]/g, '') === cleanPhone);
+    if (!user) {
+      return { success: false, error: 'এই ফোন নাম্বারে কোন একাউন্ট পাওয়া যায়নি (Phone number not registered)' };
+    }
+
+    if (user.password !== password) {
+      return { success: false, error: 'ভুল পাসওয়ার্ড দিয়েছেন! আবার চেষ্টা করুন (Incorrect password)' };
+    }
+
+    setAuthSession(user.uid);
+    return { success: true, user };
+  } catch (err: any) {
+    console.error('Login error:', err);
+    return { success: false, error: err?.message || 'লগইনে সমস্যা হয়েছে।' };
   }
-
-  if (user.password !== password) {
-    return { success: false, error: 'ভুল পাসওয়ার্ড দিয়েছেন! আবার চেষ্টা করুন (Incorrect password)' };
-  }
-
-  setAuthSession(user.uid);
-  return { success: true, user };
 };
 
 // Logout
@@ -161,66 +171,29 @@ const broadcastChange = () => {
   window.dispatchEvent(new CustomEvent('e2ee_messenger_updated'));
 };
 
-// Pre-seed default encrypted messages if none exist
+// Load stored messages
 export const getMessages = (): Message[] => {
-  const stored = localStorage.getItem(STORAGE_MESSAGES_KEY);
-  if (stored) {
-    try {
-      return JSON.parse(stored);
-    } catch {
-      // fallback
+  try {
+    const stored = localStorage.getItem(STORAGE_MESSAGES_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
     }
+  } catch {
+    // fallback
   }
 
-  // Generate pre-encrypted seed messages between Mehedi and Sadia
-  const mehedi = DEFAULT_USERS[0];
-  const sadia = DEFAULT_USERS[1];
-  const tanvir = DEFAULT_USERS[2];
-
-  const now = Date.now();
-
-  const seedMessages: Message[] = [
-    {
-      id: 'msg_1',
-      senderId: sadia.uid,
-      receiverId: mehedi.uid,
-      text: encryptMessage('হ্যালো মেহেদী ভাই! কেমন আছেন? এনক্রিপ্টেড মেসেজিং সিস্টেম কেমন চলছে?', mehedi.publicKey, sadia.secretKey),
-      timestamp: now - 3600000 * 3,
-      read: true,
-      type: 'text',
-    },
-    {
-      id: 'msg_2',
-      senderId: mehedi.uid,
-      receiverId: sadia.uid,
-      text: encryptMessage('আলহামদুলিল্লাহ ভালো! TweetNaCl 25519 এনক্রিপশন সম্পূর্ণ কাজ করছে। কেউ মেসেজ ইন্টারসেপ্ট করতে পারবে না। 🔒', sadia.publicKey, mehedi.secretKey),
-      timestamp: now - 3600000 * 2,
-      read: true,
-      type: 'text',
-    },
-    {
-      id: 'msg_3',
-      senderId: sadia.uid,
-      receiverId: mehedi.uid,
-      text: encryptMessage('অসাধারণ! ছবি এবং ভয়েস মেসেজও সহজে পাঠানো যাচ্ছে। দারুণ ডিজাইন!', mehedi.publicKey, sadia.secretKey),
-      timestamp: now - 3600000 * 1,
-      read: true,
-      type: 'text',
-    },
-    {
-      id: 'msg_4',
-      senderId: tanvir.uid,
-      receiverId: mehedi.uid,
-      text: encryptMessage('Hi Mehedi, can you review the Messenger UI layout today?', mehedi.publicKey, tanvir.secretKey),
-      timestamp: now - 1800000,
-      read: false,
-      type: 'text',
-    },
-  ];
-
-  localStorage.setItem(STORAGE_MESSAGES_KEY, JSON.stringify(seedMessages));
-  return seedMessages;
+  const emptyMsgs: Message[] = [];
+  try {
+    localStorage.setItem(STORAGE_MESSAGES_KEY, JSON.stringify(emptyMsgs));
+  } catch {
+    // ignore
+  }
+  return emptyMsgs;
 };
+
 
 // Send Text Message
 export const sendTextMessage = async (
