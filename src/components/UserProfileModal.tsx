@@ -193,10 +193,10 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     onLogout();
                   }}
                   className="py-3 px-4 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
-                  title="Logout"
+                  title="Log Out"
                 >
                   <LogOut className="w-4 h-4" />
-                  <span>{lang === 'bn' ? 'লগআউট' : 'Logout'}</span>
+                  <span>Log Out</span>
                 </button>
               </div>
             </>

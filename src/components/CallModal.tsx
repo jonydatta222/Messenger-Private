@@ -5,20 +5,24 @@ import { UserProfile } from '../types';
 interface CallModalProps {
   partner: UserProfile;
   type: 'audio' | 'video';
-  onEndCall: () => void;
+  initialStatus?: 'calling' | 'connected';
+  isAccepted?: boolean;
+  onEndCall: (duration: number) => void;
   lang: 'bn' | 'en';
 }
 
 export const CallModal: React.FC<CallModalProps> = ({
   partner,
   type,
+  initialStatus = 'calling',
+  isAccepted = false,
   onEndCall,
   lang,
 }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
-  const [callStatus, setCallStatus] = useState<'calling' | 'connected'>('calling');
+  const [callStatus, setCallStatus] = useState<'calling' | 'connected'>(initialStatus);
   const [callDuration, setCallDuration] = useState(0);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
@@ -66,27 +70,31 @@ export const CallModal: React.FC<CallModalProps> = ({
   };
 
   useEffect(() => {
-    // Start ringtone sound loop during 'calling' state
-    playRingtonePulse();
-    ringtoneIntervalRef.current = setInterval(() => {
-      playRingtonePulse();
-    }, 2400);
-
-    // Simulate connection after 2.5 seconds
-    const connectTimer = setTimeout(() => {
+    if (isAccepted) {
       setCallStatus('connected');
+    }
+  }, [isAccepted]);
+
+  useEffect(() => {
+    if (callStatus === 'calling') {
+      playRingtonePulse();
+      ringtoneIntervalRef.current = setInterval(() => {
+        playRingtonePulse();
+      }, 2400);
+    } else {
       if (ringtoneIntervalRef.current) {
         clearInterval(ringtoneIntervalRef.current);
+        ringtoneIntervalRef.current = null;
       }
-    }, 2500);
+    }
 
     return () => {
-      clearTimeout(connectTimer);
       if (ringtoneIntervalRef.current) {
         clearInterval(ringtoneIntervalRef.current);
+        ringtoneIntervalRef.current = null;
       }
     };
-  }, []);
+  }, [callStatus]);
 
   // Duration timer
   useEffect(() => {
@@ -104,28 +112,64 @@ export const CallModal: React.FC<CallModalProps> = ({
     setMediaError(null);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     }
 
     try {
-      const constraints: MediaStreamConstraints = {
-        audio: true,
-        video: type === 'video' ? { facingMode: camMode, width: { ideal: 1280 }, height: { ideal: 720 } } : false,
-      };
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('MediaDevices API not supported');
+      }
 
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
-      } catch {
-        // Fallback constraint
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-          video: type === 'video' ? true : false,
-        });
+      let stream: MediaStream | null = null;
+      let usedFallbackAudioOnly = false;
+
+      if (type === 'video') {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: { facingMode: camMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+          });
+        } catch {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+          } catch {
+            // Video failed, attempt audio only
+            try {
+              stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+              usedFallbackAudioOnly = true;
+            } catch {
+              stream = null;
+            }
+          }
+        }
+      } else {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch {
+          stream = null;
+        }
+      }
+
+      if (!stream) {
+        setMediaError(
+          lang === 'bn'
+            ? 'মাইক্রোফোন/ক্যামেরা পারমিশন দেওয়া হয়নি (Permission denied)।'
+            : 'Microphone/Camera permission denied.'
+        );
+        return;
+      }
+
+      if (usedFallbackAudioOnly) {
+        setMediaError(
+          lang === 'bn'
+            ? 'ক্যামেরা পারমিশন পাওয়া যায়নি, অডিও কলে সংযুক্ত হয়েছে।'
+            : 'Camera permission denied; connected as audio call.'
+        );
       }
 
       streamRef.current = stream;
 
-      if (localVideoRef.current && type === 'video') {
+      if (localVideoRef.current && type === 'video' && !usedFallbackAudioOnly) {
         localVideoRef.current.srcObject = stream;
         localVideoRef.current.play().catch(() => {});
       }
@@ -133,6 +177,7 @@ export const CallModal: React.FC<CallModalProps> = ({
       // Voice level analyzer setup
       try {
         const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioCtxRef.current = audioCtx;
         const source = audioCtx.createMediaStreamSource(stream);
         const analyser = audioCtx.createAnalyser();
         analyser.fftSize = 64;
@@ -153,12 +198,11 @@ export const CallModal: React.FC<CallModalProps> = ({
       } catch {
         // ignore audio meter error
       }
-    } catch (err: any) {
-      console.error('Call media error:', err);
+    } catch {
       setMediaError(
         lang === 'bn'
-          ? 'মাইক্রোফোন বা ক্যামেরা অ্যাক্সেস করা সম্ভব হয়নি। ডিভাইস পারমিশন চেক করুন।'
-          : 'Failed to access microphone/camera. Please check permissions.'
+          ? 'মাইক্রোফোন বা ক্যামেরা পারমিশন দেওয়া নেই। ব্রাউজারে অনুমতি দিন।'
+          : 'Microphone/Camera permission denied. Please allow access in browser.'
       );
     }
   };
@@ -210,7 +254,7 @@ export const CallModal: React.FC<CallModalProps> = ({
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
     }
-    onEndCall();
+    onEndCall(callDuration);
   };
 
   const formatSecs = (seconds: number) => {

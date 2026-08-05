@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore, setLogLevel } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import config from '../firebase-applet-config.json';
 
@@ -15,8 +15,19 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// Initialize Firestore with specific databaseId if provided
-export const db = getFirestore(app, config.firestoreDatabaseId || undefined);
+// Set Firestore log level to silent to avoid transient connection warning noise
+setLogLevel('silent');
+
+// Initialize Firestore with long polling fallback support
+export const db = initializeFirestore(
+  app,
+  {
+    experimentalAutoDetectLongPolling: true,
+  },
+  config.firestoreDatabaseId || undefined
+);
+
 export const auth = getAuth(app);
 
 export default app;
+

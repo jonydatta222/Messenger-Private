@@ -10,5 +10,11 @@ service cloud.firestore {
     match /groups/{groupId} {
       allow read, write: if true;
     }
+    match /typing/{typingId} {
+      allow read, write: if true;
+    }
+    match /calls/{callId} {
+      allow read, write: if true;
+    }
   }
 }

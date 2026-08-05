@@ -45,6 +45,9 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Patch Android Permissions & Manifest
+        run: node scripts/patch-android-manifest.js
+
       - name: Build Android Debug APK
         run: |
           cd android

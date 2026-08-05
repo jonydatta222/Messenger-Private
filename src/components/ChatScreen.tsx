@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Phone, 
+  PhoneOff,
   Video, 
   ShieldCheck, 
   Image as ImageIcon, 
@@ -49,7 +50,9 @@ import {
   sendGroupTextMessage,
   sendGroupImageMessage,
   sendGroupVoiceMessage,
-  deleteGroup
+  deleteGroup,
+  setTypingStatus,
+  subscribeToTypingStatus
 } from '../services/chatService';
 import { decryptMessage } from '../services/encryptionService';
 import { VoiceRecorder } from './VoiceRecorder';
@@ -213,6 +216,97 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
     );
   }
 
+  // Render Call Log Card
+  if (item.type === 'call' || item.callInfo) {
+    const callType = item.callInfo?.type || 'audio';
+    const callStatus = item.callInfo?.status || 'completed';
+    const duration = item.callInfo?.duration || 0;
+
+    const formatDuration = (secs: number) => {
+      const mins = Math.floor(secs / 60);
+      const remSecs = secs % 60;
+      return `${mins.toString().padStart(2, '0')}:${remSecs.toString().padStart(2, '0')}`;
+    };
+
+    let titleText = '';
+    let subText = '';
+    let IconComponent = Phone;
+    let iconBgColor = 'bg-slate-500/20 text-slate-400';
+
+    if (callStatus === 'missed') {
+      IconComponent = PhoneOff;
+      iconBgColor = 'bg-red-500/20 text-red-500';
+      if (isMe) {
+        titleText = callType === 'video' ? (lang === 'bn' ? 'নাকচ করা ভিডিও কল' : 'Cancelled video call') : (lang === 'bn' ? 'নাকচ করা অডিও কল' : 'Cancelled audio call');
+        subText = lang === 'bn' ? 'উত্তর দেওয়া হয়নি' : 'No answer';
+      } else {
+        titleText = callType === 'video' ? (lang === 'bn' ? 'মিসড ভিডিও কল' : 'Missed video call') : (lang === 'bn' ? 'মিসড অডিও কল' : 'Missed audio call');
+        subText = lang === 'bn' ? 'কলটি কল করা হয়েছিল' : 'Called you';
+      }
+    } else if (callStatus === 'declined') {
+      IconComponent = PhoneOff;
+      iconBgColor = 'bg-amber-500/20 text-amber-500';
+      if (isMe) {
+        titleText = callType === 'video' ? (lang === 'bn' ? 'ভিডিও কল প্রত্যাখ্যাত' : 'Video call declined') : (lang === 'bn' ? 'অডিও কল প্রত্যাখ্যাত' : 'Audio call declined');
+        subText = lang === 'bn' ? 'প্রাপক কলটি কেটে দিয়েছেন' : 'Declined by recipient';
+      } else {
+        titleText = callType === 'video' ? (lang === 'bn' ? 'আপনি ভিডিও কল প্রত্যাখ্যান করেছেন' : 'You declined video call') : (lang === 'bn' ? 'আপনি অডিও কল প্রত্যাখ্যান করেছেন' : 'You declined audio call');
+        subText = lang === 'bn' ? 'প্রত্যাখ্যাত' : 'Declined';
+      }
+    } else {
+      IconComponent = callType === 'video' ? Video : Phone;
+      iconBgColor = 'bg-emerald-500/20 text-emerald-500';
+      const durationStr = duration > 0 ? formatDuration(duration) : (lang === 'bn' ? 'সংযুক্ত ছিল' : 'Connected');
+      if (isMe) {
+        titleText = callType === 'video' ? (lang === 'bn' ? 'আউটগোয়িং ভিডিও কল' : 'Outgoing video call') : (lang === 'bn' ? 'আউটগোয়িং অডিও কল' : 'Outgoing audio call');
+      } else {
+        titleText = callType === 'video' ? (lang === 'bn' ? 'ইনকামিং ভিডিও কল' : 'Incoming video call') : (lang === 'bn' ? 'ইনকামিং অডিও কল' : 'Incoming audio call');
+      }
+      subText = durationStr;
+    }
+
+    return (
+      <div
+        id={`message-${item.id}`}
+        className="flex flex-col items-center my-2 select-none w-full"
+      >
+        <div
+          onTouchStart={() => startLongPress(item)}
+          onTouchEnd={cancelLongPress}
+          onTouchMove={cancelLongPress}
+          onMouseDown={() => startLongPress(item)}
+          onMouseUp={cancelLongPress}
+          onMouseLeave={cancelLongPress}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setSelectedMessageForAction(item);
+            setIsEditingMessage(false);
+            setShowDeleteModal(true);
+          }}
+          className={`px-4 py-2.5 rounded-2xl border backdrop-blur-md flex items-center gap-3 shadow-2xs max-w-[85%] cursor-pointer ${
+            callStatus === 'missed'
+              ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900/50 text-red-900 dark:text-red-200'
+              : callStatus === 'declined'
+              ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200'
+              : 'bg-slate-100 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+          }`}
+        >
+          <div className={`p-2.5 rounded-xl shrink-0 ${iconBgColor}`}>
+            <IconComponent className="w-5 h-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-bold truncate leading-snug">{titleText}</p>
+            <div className="flex items-center gap-2 mt-0.5 text-[10px] opacity-80 font-medium">
+              <span>{subText}</span>
+              <span>•</span>
+              <span>{formatTime(item.timestamp)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   let displayText = '';
   if (item.text) {
     if (inspectCiphertext || !partner) {
@@ -362,29 +456,41 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
             </p>
           )}
 
-          {/* Timestamp */}
+          {/* Timestamp and Seen Status */}
           <div
-            className={`flex items-center justify-end gap-1 mt-1 text-[9px] ${
+            className={`flex items-center justify-end gap-1.5 mt-1 text-[9px] ${
               isMe ? 'text-orange-100/90' : 'text-slate-500 dark:text-slate-400'
             }`}
           >
             <span>{formatTime(item.timestamp)}</span>
             {isMe && (
-              <CheckCheck
-                className={`w-3 h-3 ${item.read ? 'text-white' : 'text-orange-200/70'}`}
-              />
+              <div className="flex items-center gap-1">
+                {item.read && (
+                  <span className="text-[9px] font-extrabold text-sky-200 dark:text-sky-300 tracking-tight">
+                    Seen
+                  </span>
+                )}
+                <CheckCheck
+                  className={`w-3.5 h-3.5 ${
+                    item.read ? 'text-sky-300 dark:text-sky-300 fill-sky-300/30 ring-1 ring-sky-400/30 rounded-full' : 'text-orange-200/70'
+                  }`}
+                />
+              </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Read Avatar Indicator for sent message */}
+      {/* Read Avatar & Seen Text Indicator for sent message */}
       {isMe && item.read && partner && (
-        <div className="flex justify-end mt-0.5">
+        <div className="flex items-center justify-end gap-1 mt-1">
+          <span className="text-[9px] font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/80 px-1.5 py-0.2 rounded-full border border-sky-200 dark:border-sky-800 shadow-2xs">
+            {lang === 'bn' ? 'Seen (দেখা হয়েছে)' : 'Seen'}
+          </span>
           <img
             src={partner.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
-            alt="Read"
-            className="w-3.5 h-3.5 rounded-full object-cover ring-1 ring-black"
+            alt="Seen"
+            className="w-3.5 h-3.5 rounded-full object-cover ring-2 ring-sky-500 shadow-xs"
           />
         </div>
       )}
@@ -401,6 +507,8 @@ interface ChatScreenProps {
   onBack?: () => void;
   onOpenFloatingHead?: () => void;
   lang: 'bn' | 'en';
+  onRegisterSubModalClose?: (closeFn: (() => boolean) | null) => void;
+  onPushNavState?: (type: string) => void;
 }
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({
@@ -412,6 +520,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   onBack,
   onOpenFloatingHead,
   lang,
+  onRegisterSubModalClose,
+  onPushNavState,
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -426,6 +536,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  // Real-time Typing Indicator state
+  const [isPartnerTyping, setIsPartnerTyping] = useState(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // Delete, Edit & Long Press states
   const [selectedMessageForAction, setSelectedMessageForAction] = useState<Message | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -435,6 +549,79 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [isEditingMessage, setIsEditingMessage] = useState(false);
   const [editTextValue, setEditTextValue] = useState('');
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Sub-modal detection & history integration
+  const isAnySubModalOpen = Boolean(
+    selectedImagePreview ||
+    showCameraModal ||
+    showVoiceRecorder ||
+    showPartnerProfileModal ||
+    showChatInfoModal ||
+    showDeleteModal ||
+    showClearChatModal ||
+    showEmojiPicker
+  );
+
+  const closeSubModal = (): boolean => {
+    if (selectedImagePreview) {
+      setSelectedImagePreview(null);
+      return true;
+    }
+    if (showCameraModal) {
+      setShowCameraModal(false);
+      return true;
+    }
+    if (showVoiceRecorder) {
+      setShowVoiceRecorder(false);
+      return true;
+    }
+    if (showPartnerProfileModal) {
+      setShowPartnerProfileModal(false);
+      return true;
+    }
+    if (showChatInfoModal) {
+      setShowChatInfoModal(false);
+      return true;
+    }
+    if (showDeleteModal) {
+      setShowDeleteModal(false);
+      setSelectedMessageForAction(null);
+      return true;
+    }
+    if (showClearChatModal) {
+      setShowClearChatModal(false);
+      return true;
+    }
+    if (showEmojiPicker) {
+      setShowEmojiPicker(false);
+      return true;
+    }
+    return false;
+  };
+
+  useEffect(() => {
+    if (onRegisterSubModalClose) {
+      onRegisterSubModalClose(isAnySubModalOpen ? closeSubModal : null);
+    }
+  }, [
+    isAnySubModalOpen,
+    selectedImagePreview,
+    showCameraModal,
+    showVoiceRecorder,
+    showPartnerProfileModal,
+    showChatInfoModal,
+    showDeleteModal,
+    showClearChatModal,
+    showEmojiPicker,
+  ]);
+
+  const prevSubModalRef = useRef(false);
+  useEffect(() => {
+    if (isAnySubModalOpen && !prevSubModalRef.current) {
+      onPushNavState?.('subModal');
+    }
+    prevSubModalRef.current = isAnySubModalOpen;
+  }, [isAnySubModalOpen]);
 
   const handleInitiateReply = (item: Message) => {
     let senderName = '';
@@ -559,7 +746,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       if (onBack) onBack();
     } else if (partner) {
       deleteConversation(currentUser.uid, partner.uid);
-      deleteUser(partner.uid);
       setShowClearChatModal(false);
       if (onBack) onBack();
     }
@@ -583,6 +769,22 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
   }, [currentUser.uid, partner?.uid, group?.id]);
 
+  // Subscribe to partner typing status
+  useEffect(() => {
+    if (partner) {
+      const unsubscribe = subscribeToTypingStatus(currentUser.uid, partner.uid, (typing) => {
+        setIsPartnerTyping(typing);
+      });
+      return () => {
+        unsubscribe();
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        setTypingStatus(currentUser.uid, partner.uid, false);
+      };
+    } else {
+      setIsPartnerTyping(false);
+    }
+  }, [currentUser.uid, partner?.uid]);
+
   // Scroll to bottom on new message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -591,6 +793,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const handleSendText = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!inputText.trim()) return;
+
+    if (partner) {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      setTypingStatus(currentUser.uid, partner.uid, false);
+    }
 
     const textToSend = inputText.trim();
     const replyData = replyingToMessage || undefined;
@@ -688,7 +895,22 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         <div className="flex items-center gap-1">
           {/* Back Arrow for Fullscreen Navigation */}
           <button
-            onClick={onBack}
+            type="button"
+            onClick={() => {
+              if (isAnySubModalOpen) {
+                if (typeof window !== 'undefined' && window.history.state?.appNav) {
+                  window.history.back();
+                } else {
+                  closeSubModal();
+                }
+              } else {
+                if (typeof window !== 'undefined' && window.history.state?.appNav) {
+                  window.history.back();
+                } else if (onBack) {
+                  onBack();
+                }
+              }
+            }}
             className="p-1.5 text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
             title={lang === 'bn' ? 'ফিরে যান' : 'Back'}
           >
@@ -716,11 +938,18 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 <h2 className="font-bold text-sm text-slate-900 dark:text-slate-100 tracking-tight leading-tight">
                   {partner.displayName}
                 </h2>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium block -mt-0.5">
-                  {partner.status === 'online'
-                    ? (lang === 'bn' ? 'সক্রিয় আছেন' : 'Active now')
-                    : (lang === 'bn' ? 'অফলাইন' : 'Active 3h ago')}
-                </span>
+                {isPartnerTyping ? (
+                  <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 block -mt-0.5 animate-pulse flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" />
+                    {lang === 'bn' ? 'typing...' : 'typing...'}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium block -mt-0.5">
+                    {partner.status === 'online'
+                      ? (lang === 'bn' ? 'সক্রিয় আছেন' : 'Active now')
+                      : (lang === 'bn' ? 'অফলাইন' : 'Active 3h ago')}
+                  </span>
+                )}
               </div>
             </div>
           ) : group ? (
@@ -884,6 +1113,27 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             );
           })}
         </div>
+
+        {/* Partner Typing Bubble */}
+        {isPartnerTyping && partner && (
+          <div className="flex items-center gap-2 my-2 animate-fadeIn relative z-10">
+            <img
+              src={partner.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
+              alt="Typing"
+              className="w-6 h-6 rounded-full object-cover ring-2 ring-emerald-400 dark:ring-emerald-600 shadow-2xs"
+            />
+            <div className="bg-slate-200/90 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-2xl rounded-bl-xs px-3.5 py-2 flex items-center gap-2 text-xs border border-slate-300/80 dark:border-slate-700 shadow-2xs">
+              <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                typing...
+              </span>
+              <div className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce" />
+              </div>
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -984,7 +1234,17 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 ref={inputRef}
                 type="text"
                 value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setInputText(val);
+                  if (partner) {
+                    setTypingStatus(currentUser.uid, partner.uid, true);
+                    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+                    typingTimeoutRef.current = setTimeout(() => {
+                      setTypingStatus(currentUser.uid, partner.uid, false);
+                    }, 2500);
+                  }
+                }}
                 placeholder={lang === 'bn' ? 'মেসেজ...' : 'Message'}
                 className="w-full bg-transparent text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none text-xs"
               />

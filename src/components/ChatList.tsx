@@ -56,6 +56,24 @@ export const ChatList: React.FC<ChatListProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'my_chats' | 'groups'>('my_chats');
 
+  // Real-time Typing Map state
+  const [typingMap, setTypingMap] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const handleTyping = (e: any) => {
+      if (e.detail && e.detail.receiverId === currentUser.uid) {
+        setTypingMap((prev) => ({
+          ...prev,
+          [e.detail.senderId]: Boolean(e.detail.isTyping),
+        }));
+      }
+    };
+    window.addEventListener('e2ee_messenger_typing', handleTyping);
+    return () => {
+      window.removeEventListener('e2ee_messenger_typing', handleTyping);
+    };
+  }, [currentUser.uid]);
+
   // Long press & Delete states
   const [partnerToDelete, setPartnerToDelete] = useState<UserProfile | null>(null);
   const [groupToDelete, setGroupToDelete] = useState<Group | null>(null);
@@ -81,7 +99,6 @@ export const ChatList: React.FC<ChatListProps> = ({
   const handleConfirmDeleteConversation = () => {
     if (partnerToDelete) {
       deleteConversation(currentUser.uid, partnerToDelete.uid);
-      deleteUser(partnerToDelete.uid);
       if (selectedPartnerId === partnerToDelete.uid) {
         onSelectPartner('');
       }
@@ -404,6 +421,17 @@ export const ChatList: React.FC<ChatListProps> = ({
                   lastMsgText = lang === 'bn' ? '📷 ছবি' : '📷 Image';
                 } else if (lastMsg.type === 'voice') {
                   lastMsgText = lang === 'bn' ? '🎙️ ভয়েস মেসেজ' : '🎙️ Voice message';
+                } else if (lastMsg.type === 'call' || lastMsg.callInfo) {
+                  const isVideo = lastMsg.callInfo?.type === 'video';
+                  const status = lastMsg.callInfo?.status;
+                  const cLabel = isVideo ? (lang === 'bn' ? 'ভিডিও কল' : 'Video call') : (lang === 'bn' ? 'অডিও কল' : 'Audio call');
+                  if (status === 'missed') {
+                    lastMsgText = `📞 ${lang === 'bn' ? 'মিসড' : 'Missed'} ${cLabel}`;
+                  } else if (status === 'declined') {
+                    lastMsgText = `📞 ${cLabel} ${lang === 'bn' ? 'প্রত্যাখ্যাত' : 'declined'}`;
+                  } else {
+                    lastMsgText = `📞 ${cLabel}`;
+                  }
                 } else if (lastMsg.text) {
                   const decrypted = decryptMessage(
                     lastMsg.text,
@@ -481,21 +509,33 @@ export const ChatList: React.FC<ChatListProps> = ({
                       </div>
 
                       <div className="flex items-center justify-between mt-1">
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate pr-2 flex items-center gap-1 font-medium">
-                          {lastMsg ? (
-                            <>
-                              {lastMsg.senderId === currentUser.uid && (
-                                <CheckCheck className={`w-3 h-3 ${lastMsg.read ? 'text-orange-500' : 'text-slate-400 dark:text-slate-500'}`} />
-                              )}
-                              <span className="truncate">{lastMsgText}</span>
-                            </>
-                          ) : (
-                            <span className="text-slate-400 dark:text-slate-500 italic flex items-center gap-1">
-                              <Lock className="w-2.5 h-2.5 text-emerald-500" />
-                              {lang === 'bn' ? `ফোন: ${partner.phone}` : `Phone: ${partner.phone}`}
-                            </span>
-                          )}
-                        </p>
+                        {typingMap[partner.uid] ? (
+                          <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold truncate pr-2 flex items-center gap-1 animate-pulse">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
+                            <span>{lang === 'bn' ? 'typing...' : 'typing...'}</span>
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate pr-2 flex items-center gap-1 font-medium">
+                            {lastMsg ? (
+                              <>
+                                {lastMsg.senderId === currentUser.uid && (
+                                  <CheckCheck className={`w-3.5 h-3.5 shrink-0 ${lastMsg.read ? 'text-sky-500 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500'}`} />
+                                )}
+                                {lastMsg.senderId === currentUser.uid && lastMsg.read && (
+                                  <span className="text-[9px] font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/70 px-1 py-0.2 rounded border border-sky-200 dark:border-sky-800 shrink-0">
+                                    Seen
+                                  </span>
+                                )}
+                                <span className="truncate">{lastMsgText}</span>
+                              </>
+                            ) : (
+                              <span className="text-slate-400 dark:text-slate-500 italic flex items-center gap-1">
+                                <Lock className="w-2.5 h-2.5 text-emerald-500" />
+                                {lang === 'bn' ? `ফোন: ${partner.phone}` : `Phone: ${partner.phone}`}
+                              </span>
+                            )}
+                          </p>
+                        )}
 
                         {/* Unread badge */}
                         {unreadCount > 0 && (

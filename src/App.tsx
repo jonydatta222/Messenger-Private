@@ -5,7 +5,9 @@ import { ChatScreen } from './components/ChatScreen';
 import { UserProfileModal } from './components/UserProfileModal';
 import { FloatingChatHead } from './components/FloatingChatHead';
 import { CallModal } from './components/CallModal';
+import { IncomingCallModal } from './components/IncomingCallModal';
 import { EncryptionInfoModal } from './components/EncryptionInfoModal';
+import { PermissionsGuideModal } from './components/PermissionsGuideModal';
 import { CreateGroupModal } from './components/CreateGroupModal';
 import { AuthScreen } from './components/AuthScreen';
 import { 
@@ -16,10 +18,15 @@ import {
   getConversationsForUser,
   setAuthSession,
   getMessages,
-  getGroupsForUser
+  getGroupsForUser,
+  fetchAllFromFirestore,
+  sendCallSignal,
+  updateCallSignalStatus,
+  subscribeToCallSignals,
+  sendCallLogMessage
 } from './services/chatService';
-import { UserProfile, CallState, Group } from './types';
-import { ArrowLeft, MessageSquare, Plus, Lock, Phone } from 'lucide-react';
+import { UserProfile, CallState, Group, CallSignal } from './types';
+import { ArrowLeft, MessageSquare, Plus, Lock, Phone, LogOut } from 'lucide-react';
 
 export default function App() {
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -50,12 +57,169 @@ export default function App() {
   }, [darkMode]);
 
   // Modals & States
-  const [isFloatingHeadActive, setIsFloatingHeadActive] = useState(false);
+  const [isFloatingHeadActive, setIsFloatingHeadActive] = useState(true);
+  const [isOutsideApp, setIsOutsideApp] = useState<boolean>(() => {
+    if (typeof document !== 'undefined') {
+      return document.hidden;
+    }
+    return false;
+  });
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4000);
+  };
+
+  const handleToggleFloatingHead = () => {
+    const nextState = !isFloatingHeadActive;
+    setIsFloatingHeadActive(nextState);
+    if (nextState) {
+      showToast(
+        lang === 'bn'
+          ? 'চ্যাট হেড অন করা হয়েছে (শুধুমাত্র অ্যাপস থেকে বাইরে গেলে দেখাবে)'
+          : 'Chat Head enabled (shows only when outside the app)'
+      );
+    } else {
+      showToast(
+        lang === 'bn'
+          ? 'চ্যাট হেড বন্ধ করা হয়েছে'
+          : 'Chat Head disabled'
+      );
+    }
+  };
+
+  const handleOpenFloatingHead = () => {
+    setIsFloatingHeadActive(true);
+    showToast(
+      lang === 'bn'
+        ? 'চ্যাট হেড অন করা রয়েছে। আপনি অ্যাপস থেকে বাইরে গেলে (মিনিমাইজ করলে) এটি ভেসে উঠবে।'
+        : 'Chat Head enabled. It will appear when you minimize or leave the app.'
+    );
+  };
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showAddContactModal, setShowAddContactModal] = useState(false);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [showEncryptionInfoModal, setShowEncryptionInfoModal] = useState(false);
+  const [showPermissionsGuideModal, setShowPermissionsGuideModal] = useState(false);
+  const [showLogoutConfirmModal, setShowLogoutConfirmModal] = useState(false);
   const [activeCall, setActiveCall] = useState<CallState | null>(null);
+  const [incomingCall, setIncomingCall] = useState<CallSignal | null>(null);
+
+  // Ref to hold sub-modal closer from ChatScreen
+  const chatSubModalCloseRef = useRef<(() => boolean) | null>(null);
+
+  // Open state ref for Back button (popstate) step-by-step navigation
+  const openStateRef = useRef({
+    activeCall,
+    incomingCall,
+    showAddContactModal,
+    showCreateGroupModal,
+    showProfileModal,
+    showEncryptionInfoModal,
+    showPermissionsGuideModal,
+    showLogoutConfirmModal,
+    selectedPartnerId,
+    selectedGroupId,
+    chatSubModalCloseRef,
+  });
+
+  useEffect(() => {
+    openStateRef.current = {
+      activeCall,
+      incomingCall,
+      showAddContactModal,
+      showCreateGroupModal,
+      showProfileModal,
+      showEncryptionInfoModal,
+      showPermissionsGuideModal,
+      showLogoutConfirmModal,
+      selectedPartnerId,
+      selectedGroupId,
+      chatSubModalCloseRef,
+    };
+  }, [
+    activeCall,
+    incomingCall,
+    showAddContactModal,
+    showCreateGroupModal,
+    showProfileModal,
+    showEncryptionInfoModal,
+    showPermissionsGuideModal,
+    showLogoutConfirmModal,
+    selectedPartnerId,
+    selectedGroupId,
+  ]);
+
+  // Push history state helper for sub-views / modals
+  const pushNavState = (type: string) => {
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ appNav: true, type, ts: Date.now() }, '');
+    }
+  };
+
+  // Safe close helper for UI on-screen buttons
+  const safeCloseModal = (closeFn: () => void) => {
+    if (typeof window !== 'undefined' && window.history.state?.appNav) {
+      window.history.back();
+    } else {
+      closeFn();
+    }
+  };
+
+  // Listen to popstate (Hardware / Browser back button) for step-by-step navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      const cur = openStateRef.current;
+
+      if (cur.activeCall) {
+        setActiveCall(null);
+        return;
+      }
+      if (cur.showAddContactModal) {
+        setShowAddContactModal(false);
+        setAddContactError(null);
+        setNewContactPhone('');
+        return;
+      }
+      if (cur.showCreateGroupModal) {
+        setShowCreateGroupModal(false);
+        return;
+      }
+      if (cur.showProfileModal) {
+        setShowProfileModal(false);
+        return;
+      }
+      if (cur.showEncryptionInfoModal) {
+        setShowEncryptionInfoModal(false);
+        return;
+      }
+      if (cur.showPermissionsGuideModal) {
+        setShowPermissionsGuideModal(false);
+        return;
+      }
+      if (cur.showLogoutConfirmModal) {
+        setShowLogoutConfirmModal(false);
+        return;
+      }
+      if (cur.chatSubModalCloseRef.current) {
+        const closed = cur.chatSubModalCloseRef.current();
+        if (closed) return;
+      }
+      if (cur.selectedPartnerId || cur.selectedGroupId) {
+        setSelectedPartnerId(null);
+        setSelectedGroupId(null);
+        return;
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
 
   // New Contact Form State
   const [newContactPhone, setNewContactPhone] = useState('');
@@ -132,32 +296,83 @@ export default function App() {
       loadData();
     };
 
-    const handleAppMinimized = () => {
-      const currUser = getCurrentUserProfile();
-      if (currUser && document.hidden) {
-        setIsFloatingHeadActive(true);
-      }
+    const handleAppVisibilityChange = () => {
+      const isHidden = typeof document !== 'undefined' ? document.hidden : false;
+      setIsOutsideApp(isHidden);
     };
 
     window.addEventListener('e2ee_messenger_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
-    document.addEventListener('visibilitychange', handleAppMinimized);
-    window.addEventListener('blur', handleAppMinimized);
+    document.addEventListener('visibilitychange', handleAppVisibilityChange);
 
     return () => {
       window.removeEventListener('e2ee_messenger_updated', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
-      document.removeEventListener('visibilitychange', handleAppMinimized);
-      window.removeEventListener('blur', handleAppMinimized);
+      document.removeEventListener('visibilitychange', handleAppVisibilityChange);
     };
   }, [lang]);
 
+  // Subscribe to real-time call signals
+  useEffect(() => {
+    if (!currentUser) return;
+    const unsubscribe = subscribeToCallSignals(currentUser.uid, (signal) => {
+      // Receiver side
+      if (signal.receiverId === currentUser.uid) {
+        if (signal.status === 'ringing') {
+          setIncomingCall(signal);
+        } else if (signal.status === 'ended' || signal.status === 'rejected') {
+          if (signal.status === 'ended') {
+            // Caller hung up while ringing -> record missed call for receiver
+            sendCallLogMessage(signal.callerId, currentUser.uid, signal.type, 'missed', undefined, signal.id);
+          }
+          setIncomingCall((prev) => (prev?.id === signal.id ? null : prev));
+          setActiveCall((prev) => (prev?.callId === signal.id ? null : prev));
+        }
+      }
+
+      // Caller side
+      if (signal.callerId === currentUser.uid) {
+        if (signal.status === 'accepted') {
+          setActiveCall((prev) =>
+            prev?.callId === signal.id ? { ...prev, status: 'connected', startTime: Date.now() } : prev
+          );
+        } else if (signal.status === 'rejected') {
+          setActiveCall((prev) => (prev?.callId === signal.id ? null : prev));
+          sendCallLogMessage(currentUser.uid, signal.receiverId, signal.type, 'declined', undefined, signal.id);
+          setToastMessage(lang === 'bn' ? 'কলটি রিজেক্ট করা হয়েছে' : 'Call was declined');
+          setTimeout(() => setToastMessage(null), 3500);
+        } else if (signal.status === 'ended') {
+          setActiveCall((prev) => (prev?.callId === signal.id ? null : prev));
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentUser, lang]);
+
   const handleAuthSuccess = (user: UserProfile) => {
+    setSelectedPartnerId(null);
+    setSelectedGroupId(null);
+    const allMsgs = getMessages();
+    const myIncomingMsgs = allMsgs.filter((m) => m.receiverId === user.uid && m.senderId !== user.uid);
+    if (myIncomingMsgs.length > 0) {
+      lastKnownMsgIdRef.current = myIncomingMsgs[myIncomingMsgs.length - 1].id;
+    } else {
+      lastKnownMsgIdRef.current = null;
+    }
     setCurrentUser(user);
     loadData();
   };
 
-  const handleLogout = () => {
+  const handleRequestLogout = () => {
+    setShowLogoutConfirmModal(true);
+    pushNavState('logoutConfirm');
+  };
+
+  const handleConfirmLogout = () => {
+    setShowLogoutConfirmModal(false);
     logoutUser();
     setCurrentUser(null);
     setSelectedPartnerId(null);
@@ -177,7 +392,7 @@ export default function App() {
   const selectedPartner = users.find((u) => u.uid === selectedPartnerId) || null;
   const selectedGroup = groups.find((g) => g.id === selectedGroupId) || null;
 
-  const handleAddContact = (e: React.FormEvent) => {
+  const handleAddContact = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddContactError(null);
     const cleanPhone = newContactPhone.replace(/[\s-]/g, '').trim();
@@ -213,11 +428,21 @@ export default function App() {
     const normalizePhone = (p: string) => p.replace(/[\s\-\+\(\)]/g, '').replace(/^88/, '');
     const searchNorm = normalizePhone(cleanPhone);
 
-    const loadedUsers = getUsers();
-    const existingUser = loadedUsers.find((u) => {
+    let loadedUsers = getUsers();
+    let existingUser = loadedUsers.find((u) => {
       const uNorm = normalizePhone(u.phone || '');
       return uNorm && (uNorm === searchNorm || uNorm.endsWith(searchNorm) || searchNorm.endsWith(uNorm));
     });
+
+    if (!existingUser) {
+      // Try pulling latest users from Firestore
+      await fetchAllFromFirestore();
+      loadedUsers = getUsers();
+      existingUser = loadedUsers.find((u) => {
+        const uNorm = normalizePhone(u.phone || '');
+        return uNorm && (uNorm === searchNorm || uNorm.endsWith(searchNorm) || searchNorm.endsWith(uNorm));
+      });
+    }
 
     if (existingUser) {
       setSelectedPartnerId(existingUser.uid);
@@ -234,9 +459,11 @@ export default function App() {
     }
   };
 
-  const handleStartCall = (type: 'audio' | 'video') => {
-    if (selectedPartner) {
+  const handleStartCall = async (type: 'audio' | 'video') => {
+    if (selectedPartner && currentUser) {
+      const signal = await sendCallSignal(currentUser.uid, selectedPartner.uid, type);
       setActiveCall({
+        callId: signal.id,
         active: true,
         type,
         partnerId: selectedPartner.uid,
@@ -245,21 +472,104 @@ export default function App() {
     }
   };
 
+  const handleEndActiveCall = (duration?: number) => {
+    if (activeCall?.callId && currentUser) {
+      const partnerId = activeCall.partnerId || selectedPartner?.uid;
+      updateCallSignalStatus(
+        activeCall.callId,
+        'ended',
+        currentUser.uid,
+        partnerId,
+        activeCall.type || 'audio'
+      );
+      if (partnerId) {
+        if (activeCall.status === 'connected') {
+          const calcDuration = duration || (activeCall.startTime ? Math.floor((Date.now() - activeCall.startTime) / 1000) : 0);
+          sendCallLogMessage(currentUser.uid, partnerId, activeCall.type || 'audio', 'completed', calcDuration, activeCall.callId);
+        } else {
+          sendCallLogMessage(currentUser.uid, partnerId, activeCall.type || 'audio', 'missed', undefined, activeCall.callId);
+        }
+      }
+    }
+    setActiveCall(null);
+  };
+
+  const handleAcceptIncomingCall = () => {
+    if (!incomingCall) return;
+    updateCallSignalStatus(
+      incomingCall.id,
+      'accepted',
+      incomingCall.callerId,
+      incomingCall.receiverId,
+      incomingCall.type
+    );
+    setActiveCall({
+      callId: incomingCall.id,
+      active: true,
+      type: incomingCall.type,
+      partnerId: incomingCall.callerId,
+      status: 'connected',
+      startTime: Date.now(),
+    });
+    setIncomingCall(null);
+  };
+
+  const handleRejectIncomingCall = () => {
+    if (!incomingCall || !currentUser) return;
+    updateCallSignalStatus(
+      incomingCall.id,
+      'rejected',
+      incomingCall.callerId,
+      incomingCall.receiverId,
+      incomingCall.type
+    );
+    sendCallLogMessage(
+      incomingCall.callerId,
+      currentUser.uid,
+      incomingCall.type,
+      'declined',
+      undefined,
+      incomingCall.id
+    );
+    setIncomingCall(null);
+  };
+
+  const activeCallPartner = selectedPartner || users.find((u) => u.uid === activeCall?.partnerId);
+  const incomingCallerUser = users.find((u) => u.uid === incomingCall?.callerId) || (incomingCall ? ({ uid: incomingCall.callerId, displayName: 'User', phone: '' } as UserProfile) : null);
+
   return (
-    <div className="flex flex-col h-screen w-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 overflow-hidden select-none transition-colors">
+    <div className="flex flex-col h-screen w-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 overflow-hidden select-none transition-colors relative">
+      {/* Toast Notification Banner */}
+      {toastMessage && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-slate-900/95 dark:bg-slate-100/95 text-white dark:text-slate-900 px-4 py-2.5 rounded-2xl shadow-2xl border border-slate-700 dark:border-slate-300 text-xs font-semibold flex items-center gap-2 animate-fadeIn pointer-events-none max-w-[90vw] text-center">
+          <MessageSquare className="w-4 h-4 text-orange-400 dark:text-orange-600 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Top Header - Only shown when no active chat or group is selected */}
       {!selectedPartnerId && !selectedGroupId && (
         <Header
           currentUser={currentUser}
           lang={lang}
           onToggleLang={() => setLang(lang === 'bn' ? 'en' : 'bn')}
-          onOpenProfile={() => setShowProfileModal(true)}
+          onOpenProfile={() => {
+            setShowProfileModal(true);
+            pushNavState('profile');
+          }}
           darkMode={darkMode}
           onToggleDarkMode={() => setDarkMode((prev) => !prev)}
           isFloatingHeadActive={isFloatingHeadActive}
-          onToggleFloatingHead={() => setIsFloatingHeadActive(!isFloatingHeadActive)}
-          onOpenEncryptionInfo={() => setShowEncryptionInfoModal(true)}
-          onLogout={handleLogout}
+          onToggleFloatingHead={handleToggleFloatingHead}
+          onOpenEncryptionInfo={() => {
+            setShowEncryptionInfoModal(true);
+            pushNavState('encryptionInfo');
+          }}
+          onOpenPermissionsGuide={() => {
+            setShowPermissionsGuideModal(true);
+            pushNavState('permissionsGuide');
+          }}
+          onLogout={handleRequestLogout}
         />
       )}
 
@@ -275,14 +585,22 @@ export default function App() {
               onSelectPartner={(partnerId) => {
                 setSelectedPartnerId(partnerId);
                 setSelectedGroupId(null);
+                pushNavState('chat');
               }}
               selectedGroupId={selectedGroupId}
               onSelectGroup={(groupId) => {
                 setSelectedGroupId(groupId);
                 setSelectedPartnerId(null);
+                pushNavState('chat');
               }}
-              onOpenAddContact={() => setShowAddContactModal(true)}
-              onOpenCreateGroup={() => setShowCreateGroupModal(true)}
+              onOpenAddContact={() => {
+                setShowAddContactModal(true);
+                pushNavState('addContact');
+              }}
+              onOpenCreateGroup={() => {
+                setShowCreateGroupModal(true);
+                pushNavState('createGroup');
+              }}
               lang={lang}
             />
           </div>
@@ -295,12 +613,21 @@ export default function App() {
                 partner={selectedPartner}
                 group={selectedGroup}
                 allUsers={users}
-                onStartCall={handleStartCall}
-                onBack={() => {
-                  setSelectedPartnerId(null);
-                  setSelectedGroupId(null);
+                onStartCall={(type) => {
+                  handleStartCall(type);
+                  pushNavState('call');
                 }}
-                onOpenFloatingHead={() => setIsFloatingHeadActive(true)}
+                onBack={() => {
+                  safeCloseModal(() => {
+                    setSelectedPartnerId(null);
+                    setSelectedGroupId(null);
+                  });
+                }}
+                onRegisterSubModalClose={(fn) => {
+                  chatSubModalCloseRef.current = fn;
+                }}
+                onPushNavState={pushNavState}
+                onOpenFloatingHead={handleOpenFloatingHead}
                 lang={lang}
               />
             )}
@@ -308,8 +635,8 @@ export default function App() {
         )}
       </div>
 
-      {/* Floating Chat Head Mode */}
-      {isFloatingHeadActive && (
+      {/* Floating Chat Head Mode - ONLY rendered when OUTSIDE the app */}
+      {isOutsideApp && isFloatingHeadActive && (
         <FloatingChatHead
           currentUser={currentUser}
           partners={users.filter((u) => u.uid !== currentUser.uid)}
@@ -328,7 +655,7 @@ export default function App() {
         <CreateGroupModal
           currentUser={currentUser}
           allUsers={users}
-          onClose={() => setShowCreateGroupModal(false)}
+          onClose={() => safeCloseModal(() => setShowCreateGroupModal(false))}
           onGroupCreated={(createdGroup) => {
             loadData();
             setSelectedGroupId(createdGroup.id);
@@ -342,8 +669,8 @@ export default function App() {
       {showProfileModal && (
         <UserProfileModal
           currentUser={currentUser}
-          onClose={() => setShowProfileModal(false)}
-          onLogout={handleLogout}
+          onClose={() => safeCloseModal(() => setShowProfileModal(false))}
+          onLogout={handleRequestLogout}
           onProfileUpdated={(updated) => {
             setCurrentUser(updated);
             loadData();
@@ -355,7 +682,15 @@ export default function App() {
       {/* Encryption Info Modal */}
       {showEncryptionInfoModal && (
         <EncryptionInfoModal
-          onClose={() => setShowEncryptionInfoModal(false)}
+          onClose={() => safeCloseModal(() => setShowEncryptionInfoModal(false))}
+          lang={lang}
+        />
+      )}
+
+      {/* Permissions Guide Modal */}
+      {showPermissionsGuideModal && (
+        <PermissionsGuideModal
+          onClose={() => safeCloseModal(() => setShowPermissionsGuideModal(false))}
           lang={lang}
         />
       )}
@@ -372,9 +707,11 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  setShowAddContactModal(false);
-                  setAddContactError(null);
-                  setNewContactPhone('');
+                  safeCloseModal(() => {
+                    setShowAddContactModal(false);
+                    setAddContactError(null);
+                    setNewContactPhone('');
+                  });
                 }}
                 className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
@@ -428,9 +765,11 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    setShowAddContactModal(false);
-                    setAddContactError(null);
-                    setNewContactPhone('');
+                    safeCloseModal(() => {
+                      setShowAddContactModal(false);
+                      setAddContactError(null);
+                      setNewContactPhone('');
+                    });
                   }}
                   className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
                 >
@@ -449,14 +788,67 @@ export default function App() {
         </div>
       )}
 
-      {/* Call Modal */}
-      {activeCall && selectedPartner && (
-        <CallModal
-          partner={selectedPartner}
-          type={activeCall.type || 'audio'}
-          onEndCall={() => setActiveCall(null)}
+      {/* Incoming Call Modal */}
+      {incomingCall && incomingCallerUser && (
+        <IncomingCallModal
+          caller={incomingCallerUser}
+          type={incomingCall.type}
+          onAccept={handleAcceptIncomingCall}
+          onReject={handleRejectIncomingCall}
           lang={lang}
         />
+      )}
+
+      {/* Active Call Modal */}
+      {activeCall && activeCallPartner && (
+        <CallModal
+          partner={activeCallPartner}
+          type={activeCall.type || 'audio'}
+          initialStatus={activeCall.status === 'connected' ? 'connected' : 'calling'}
+          isAccepted={activeCall.status === 'connected'}
+          onEndCall={handleEndActiveCall}
+          lang={lang}
+        />
+      )}
+
+      {/* Logout Confirmation Modal Popup */}
+      {showLogoutConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 text-center space-y-4 animate-scaleUp">
+            <div className="w-14 h-14 rounded-full bg-red-100 dark:bg-red-950/60 border border-red-200 dark:border-red-900/50 flex items-center justify-center mx-auto text-red-600 dark:text-red-400 shadow-inner">
+              <LogOut className="w-7 h-7" />
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                {lang === 'bn' ? 'লগআউট নিশ্চিতকরণ' : 'Confirm Log Out'}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
+                {lang === 'bn'
+                  ? 'আপনি কি নিশ্চিত যে অ্যাপস থেকে লগআউট করতে চান?'
+                  : 'Are you sure you want to log out of the application?'}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => safeCloseModal(() => setShowLogoutConfirmModal(false))}
+                className="flex-1 py-2.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                {lang === 'bn' ? 'না (No)' : 'No'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmLogout}
+                className="flex-1 py-2.5 px-4 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-red-600/30 transition-all cursor-pointer"
+              >
+                {lang === 'bn' ? 'হ্যাঁ (Yes)' : 'Yes'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

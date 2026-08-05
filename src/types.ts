@@ -34,7 +34,13 @@ export interface Message {
   audioDuration?: number; // Duration in seconds
   timestamp: number;
   read: boolean;
-  type?: 'text' | 'image' | 'voice';
+  type?: 'text' | 'image' | 'voice' | 'call';
+  callInfo?: {
+    callId?: string;
+    type: 'audio' | 'video';
+    status: 'missed' | 'declined' | 'completed';
+    duration?: number;
+  };
   deletedForUsers?: string[]; // User UIDs for whom this message is deleted locally
   isEdited?: boolean;
   isDeletedForEveryone?: boolean;
@@ -48,9 +54,19 @@ export interface Message {
 }
 
 export interface CallState {
+  callId?: string;
   active: boolean;
   type: 'audio' | 'video' | null;
   partnerId: string | null;
   status: 'calling' | 'connected' | 'ended' | null;
   startTime?: number;
+}
+
+export interface CallSignal {
+  id: string;
+  callerId: string;
+  receiverId: string;
+  type: 'audio' | 'video';
+  status: 'ringing' | 'accepted' | 'rejected' | 'ended';
+  timestamp: number;
 }

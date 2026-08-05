@@ -1,4 +1,4 @@
-import { Message, UserProfile, Group } from '../types';
+import { Message, UserProfile, Group, CallSignal } from '../types';
 import { generateKeyPair, encryptMessage } from './encryptionService';
 import { db } from '../firebase';
 import {
@@ -21,6 +21,23 @@ const STORAGE_GROUPS_KEY = 'e2ee_messenger_groups';
 
 export const DEFAULT_USERS: UserProfile[] = [];
 const DEMO_UIDS = ['user_mehedi', 'user_sadia', 'user_tanvir', 'user_nusrat', 'user_joni', 'joni'];
+
+// Helper to remove undefined fields before sending to Firestore
+export const cleanForFirestore = <T extends Record<string, any>>(obj: T): Record<string, any> => {
+  if (!obj || typeof obj !== 'object') return obj;
+  const result: Record<string, any> = {};
+  Object.keys(obj).forEach((key) => {
+    const val = obj[key];
+    if (val !== undefined) {
+      if (val !== null && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+        result[key] = cleanForFirestore(val);
+      } else {
+        result[key] = val;
+      }
+    }
+  });
+  return result;
+};
 
 // Local Cache In-Memory & LocalStorage getters/setters
 export const getUsers = (): UserProfile[] => {
@@ -153,7 +170,7 @@ export const initFirestoreSync = () => {
       }
     },
     (error) => {
-      console.warn('Firestore Users snapshot error:', error);
+      console.debug('Firestore Users snapshot error:', error);
     }
   );
 
@@ -177,7 +194,7 @@ export const initFirestoreSync = () => {
       }
     },
     (error) => {
-      console.warn('Firestore Messages snapshot error:', error);
+      console.debug('Firestore Messages snapshot error:', error);
     }
   );
 
@@ -201,10 +218,29 @@ export const initFirestoreSync = () => {
       }
     },
     (error) => {
-      console.warn('Firestore Groups snapshot error:', error);
+      console.debug('Firestore Groups snapshot error:', error);
+    }
+  );
+
+  // Real-time listener for Calls collection
+  onSnapshot(
+    collection(db, 'calls'),
+    (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        const callData = change.doc.data() as CallSignal;
+        if (callData && callData.id) {
+          notifyCallSignal(callData);
+        }
+      });
+    },
+    (error) => {
+      console.debug('Firestore Calls snapshot error:', error);
     }
   );
 };
+
+// Start Firestore real-time synchronization automatically
+initFirestoreSync();
 
 // Manual full fetch from Firestore
 export const fetchAllFromFirestore = async () => {
@@ -290,7 +326,7 @@ export const signUpUser = async (
     };
 
     // Save to Firestore permanently
-    await setDoc(doc(db, 'users', newUser.uid), newUser);
+    await setDoc(doc(db, 'users', newUser.uid), cleanForFirestore(newUser));
 
     // Save locally & set session
     localUsers.push(newUser);
@@ -388,7 +424,7 @@ export const sendTextMessage = async (
 
   // Save to Firestore
   try {
-    await setDoc(doc(db, 'messages', newMessage.id), newMessage);
+    await setDoc(doc(db, 'messages', newMessage.id), cleanForFirestore(newMessage));
   } catch (e) {
     console.error('Error writing message to Firestore:', e);
   }
@@ -420,7 +456,7 @@ export const sendImageMessage = async (
   };
 
   try {
-    await setDoc(doc(db, 'messages', newMessage.id), newMessage);
+    await setDoc(doc(db, 'messages', newMessage.id), cleanForFirestore(newMessage));
   } catch (e) {
     console.error('Error writing image message to Firestore:', e);
   }
@@ -453,7 +489,7 @@ export const sendVoiceMessage = async (
   };
 
   try {
-    await setDoc(doc(db, 'messages', newMessage.id), newMessage);
+    await setDoc(doc(db, 'messages', newMessage.id), cleanForFirestore(newMessage));
   } catch (e) {
     console.error('Error writing voice message to Firestore:', e);
   }
@@ -514,7 +550,7 @@ export const createNewUser = (
   };
 
   // Sync with Firestore
-  setDoc(doc(db, 'users', newUser.uid), newUser).catch((e) => console.error(e));
+  setDoc(doc(db, 'users', newUser.uid), cleanForFirestore(newUser)).catch((e) => console.error(e));
 
   users.push(newUser);
   saveUsersLocally(users);
@@ -557,12 +593,17 @@ export const subscribeToMessages = (
 ) => {
   const fetchAndFilter = () => {
     const allMessages = getMessages();
-    const filtered = allMessages.filter(
-      (m) =>
+    const uniqueMap = new Map<string, Message>();
+    allMessages.forEach((m) => {
+      if (
         !m.deletedForUsers?.includes(currentUserId) &&
         ((m.senderId === currentUserId && m.receiverId === chatPartnerId) ||
           (m.senderId === chatPartnerId && m.receiverId === currentUserId))
-    );
+      ) {
+        uniqueMap.set(m.id, m);
+      }
+    });
+    const filtered = Array.from(uniqueMap.values());
     filtered.sort((a, b) => a.timestamp - b.timestamp);
     onMessagesUpdate(filtered);
   };
@@ -606,7 +647,7 @@ export const updateUserProfile = (
   saveUsersLocally(users);
 
   // Sync to Firestore
-  setDoc(doc(db, 'users', uid), updatedUser, { merge: true }).catch((e) => console.error(e));
+  setDoc(doc(db, 'users', uid), cleanForFirestore(updatedUser), { merge: true }).catch((e) => console.error(e));
 
   return updatedUser;
 };
@@ -623,7 +664,7 @@ export const deleteForMe = (messageId: string, userId: string) => {
       saveMessagesLocally(messages);
 
       // Firestore sync
-      updateDoc(doc(db, 'messages', messageId), { deletedForUsers: updated }).catch(() => {});
+      updateDoc(doc(db, 'messages', messageId), cleanForFirestore({ deletedForUsers: updated })).catch(() => {});
     }
   }
 };
@@ -644,7 +685,7 @@ export const deleteForEveryone = (messageId: string) => {
     saveMessagesLocally(messages);
 
     // Firestore sync
-    setDoc(doc(db, 'messages', messageId), messages[index]).catch(() => {});
+    setDoc(doc(db, 'messages', messageId), cleanForFirestore(messages[index])).catch(() => {});
   }
 };
 
@@ -675,11 +716,20 @@ export const editTextMessage = (
 // Delete conversation
 export const deleteConversation = (currentUserId: string, partnerId: string) => {
   const messages = getMessages();
-  const updated = messages.filter(
-    (m) =>
-      !((m.senderId === currentUserId && m.receiverId === partnerId) ||
-        (m.senderId === partnerId && m.receiverId === currentUserId))
-  );
+  const updated = messages.map((m) => {
+    if (
+      (m.senderId === currentUserId && m.receiverId === partnerId) ||
+      (m.senderId === partnerId && m.receiverId === currentUserId)
+    ) {
+      const deletedFor = m.deletedForUsers || [];
+      if (!deletedFor.includes(currentUserId)) {
+        const updatedDeletedFor = [...deletedFor, currentUserId];
+        updateDoc(doc(db, 'messages', m.id), cleanForFirestore({ deletedForUsers: updatedDeletedFor })).catch(() => {});
+        return { ...m, deletedForUsers: updatedDeletedFor };
+      }
+    }
+    return m;
+  });
   saveMessagesLocally(updated);
 };
 
@@ -749,7 +799,7 @@ export const createGroup = async (
 
   // Firestore sync
   try {
-    await setDoc(doc(db, 'groups', newGroup.id), newGroup);
+    await setDoc(doc(db, 'groups', newGroup.id), cleanForFirestore(newGroup));
   } catch (e) {
     console.error('Group write to firestore failed:', e);
   }
@@ -770,7 +820,7 @@ export const createGroup = async (
   };
 
   try {
-    await setDoc(doc(db, 'messages', welcomeMsg.id), welcomeMsg);
+    await setDoc(doc(db, 'messages', welcomeMsg.id), cleanForFirestore(welcomeMsg));
   } catch (e) {
     console.error(e);
   }
@@ -837,7 +887,7 @@ export const sendGroupTextMessage = async (
   };
 
   try {
-    await setDoc(doc(db, 'messages', newMessage.id), newMessage);
+    await setDoc(doc(db, 'messages', newMessage.id), cleanForFirestore(newMessage));
   } catch (e) {
     console.error(e);
   }
@@ -868,7 +918,7 @@ export const sendGroupImageMessage = async (
   };
 
   try {
-    await setDoc(doc(db, 'messages', newMessage.id), newMessage);
+    await setDoc(doc(db, 'messages', newMessage.id), cleanForFirestore(newMessage));
   } catch (e) {
     console.error(e);
   }
@@ -901,7 +951,7 @@ export const sendGroupVoiceMessage = async (
   };
 
   try {
-    await setDoc(doc(db, 'messages', newMessage.id), newMessage);
+    await setDoc(doc(db, 'messages', newMessage.id), cleanForFirestore(newMessage));
   } catch (e) {
     console.error(e);
   }
@@ -927,11 +977,16 @@ export const subscribeToGroupMessages = (
 ) => {
   const fetchAndFilter = () => {
     const allMessages = getMessages();
-    const filtered = allMessages.filter(
-      (m) =>
+    const uniqueMap = new Map<string, Message>();
+    allMessages.forEach((m) => {
+      if (
         !m.deletedForUsers?.includes(currentUserId) &&
         (m.groupId === groupId || m.receiverId === groupId)
-    );
+      ) {
+        uniqueMap.set(m.id, m);
+      }
+    });
+    const filtered = Array.from(uniqueMap.values());
     filtered.sort((a, b) => a.timestamp - b.timestamp);
     onMessagesUpdate(filtered);
   };
@@ -975,4 +1030,228 @@ export const getUnreadGroupCount = (groupId: string, currentUserId: string): num
       m.senderId !== currentUserId &&
       !m.read
   ).length;
+};
+
+// ==================== TYPING INDICATOR SERVICES ====================
+
+const typingMemoryCache = new Map<string, boolean>();
+
+export const setTypingStatus = async (senderId: string, receiverId: string, isTyping: boolean) => {
+  const key = `${senderId}_${receiverId}`;
+  if (typingMemoryCache.get(key) === isTyping) return;
+  typingMemoryCache.set(key, isTyping);
+
+  // Broadcast locally & cross-tab
+  if (broadcastChannel) {
+    broadcastChannel.postMessage({ type: 'TYPING_STATUS', senderId, receiverId, isTyping });
+  }
+  window.dispatchEvent(
+    new CustomEvent('e2ee_messenger_typing', { detail: { senderId, receiverId, isTyping } })
+  );
+
+  // Sync to Firestore doc
+  try {
+    await setDoc(doc(db, 'typing', key), {
+      senderId,
+      receiverId,
+      isTyping,
+      updatedAt: Date.now(),
+    });
+  } catch (err) {
+    console.warn('Typing status sync error:', err);
+  }
+};
+
+export const subscribeToTypingStatus = (
+  senderId: string,
+  partnerId: string,
+  onTypingUpdate: (isTyping: boolean) => void
+) => {
+  const docId = `${partnerId}_${senderId}`;
+
+  // Local & Broadcast listener
+  const handleLocalTyping = (e: any) => {
+    if (e.detail && e.detail.senderId === partnerId && e.detail.receiverId === senderId) {
+      onTypingUpdate(Boolean(e.detail.isTyping));
+    }
+  };
+
+  const handleBroadcastTyping = (e: MessageEvent) => {
+    if (
+      e.data &&
+      e.data.type === 'TYPING_STATUS' &&
+      e.data.senderId === partnerId &&
+      e.data.receiverId === senderId
+    ) {
+      onTypingUpdate(Boolean(e.data.isTyping));
+    }
+  };
+
+  window.addEventListener('e2ee_messenger_typing', handleLocalTyping);
+  if (broadcastChannel) {
+    broadcastChannel.addEventListener('message', handleBroadcastTyping);
+  }
+
+  // Firestore Snapshot listener
+  const unsubscribeFirestore = onSnapshot(
+    doc(db, 'typing', docId),
+    (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const isFresh = Date.now() - (data.updatedAt || 0) < 8000;
+        onTypingUpdate(Boolean(data.isTyping && isFresh));
+      } else {
+        onTypingUpdate(false);
+      }
+    },
+    (err) => {
+      console.warn('Typing snapshot error:', err);
+    }
+  );
+
+  return () => {
+    window.removeEventListener('e2ee_messenger_typing', handleLocalTyping);
+    if (broadcastChannel) {
+      broadcastChannel.removeEventListener('message', handleBroadcastTyping);
+    }
+    unsubscribeFirestore();
+  };
+};
+
+// ==================== CALL SIGNALING SERVICES ====================
+
+export const notifyCallSignal = (call: CallSignal) => {
+  if (broadcastChannel) {
+    broadcastChannel.postMessage({ type: 'CALL_SIGNAL', call });
+  }
+  window.dispatchEvent(new CustomEvent('e2ee_messenger_call_signal', { detail: call }));
+};
+
+export const sendCallSignal = async (
+  callerId: string,
+  receiverId: string,
+  type: 'audio' | 'video'
+): Promise<CallSignal> => {
+  const callId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const call: CallSignal = {
+    id: callId,
+    callerId,
+    receiverId,
+    type,
+    status: 'ringing',
+    timestamp: Date.now(),
+  };
+
+  notifyCallSignal(call);
+
+  try {
+    await setDoc(doc(db, 'calls', callId), cleanForFirestore(call));
+  } catch (err) {
+    console.warn('Failed to send call signal to Firestore:', err);
+  }
+
+  return call;
+};
+
+export const updateCallSignalStatus = async (
+  callId: string,
+  status: 'accepted' | 'rejected' | 'ended',
+  callerId?: string,
+  receiverId?: string,
+  type?: 'audio' | 'video'
+) => {
+  if (callerId && receiverId && type) {
+    notifyCallSignal({
+      id: callId,
+      callerId,
+      receiverId,
+      type,
+      status,
+      timestamp: Date.now(),
+    });
+  }
+  try {
+    await updateDoc(doc(db, 'calls', callId), { status });
+  } catch (err) {
+    console.warn('Failed to update call status in Firestore:', err);
+  }
+};
+
+export const subscribeToCallSignals = (
+  currentUserId: string,
+  onSignal: (signal: CallSignal) => void
+) => {
+  const handleLocalSignal = (e: any) => {
+    if (e.detail) {
+      const sig = e.detail as CallSignal;
+      if (sig.callerId === currentUserId || sig.receiverId === currentUserId) {
+        onSignal(sig);
+      }
+    }
+  };
+
+  const handleBroadcastSignal = (e: MessageEvent) => {
+    if (e.data && e.data.type === 'CALL_SIGNAL' && e.data.call) {
+      const sig = e.data.call as CallSignal;
+      if (sig.callerId === currentUserId || sig.receiverId === currentUserId) {
+        onSignal(sig);
+      }
+    }
+  };
+
+  window.addEventListener('e2ee_messenger_call_signal', handleLocalSignal);
+  if (broadcastChannel) {
+    broadcastChannel.addEventListener('message', handleBroadcastSignal);
+  }
+
+  return () => {
+    window.removeEventListener('e2ee_messenger_call_signal', handleLocalSignal);
+    if (broadcastChannel) {
+      broadcastChannel.removeEventListener('message', handleBroadcastSignal);
+    }
+  };
+};
+
+export const sendCallLogMessage = async (
+  callerId: string,
+  receiverId: string,
+  callType: 'audio' | 'video',
+  callStatus: 'missed' | 'declined' | 'completed',
+  duration?: number,
+  callId?: string
+): Promise<Message | null> => {
+  const msgId = callId ? `msg_call_${callId}` : `msg_call_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+  const localMessages = getMessages();
+  if (localMessages.some((m) => m.id === msgId)) {
+    return null;
+  }
+
+  const newMessage: Message = {
+    id: msgId,
+    senderId: callerId,
+    receiverId,
+    timestamp: Date.now(),
+    read: false,
+    type: 'call',
+    callInfo: {
+      callId,
+      type: callType,
+      status: callStatus,
+      duration,
+    },
+  };
+
+  try {
+    await setDoc(doc(db, 'messages', newMessage.id), cleanForFirestore(newMessage));
+  } catch (e) {
+    console.error('Error writing call log message to Firestore:', e);
+  }
+
+  if (!localMessages.some((m) => m.id === newMessage.id)) {
+    localMessages.push(newMessage);
+    saveMessagesLocally(localMessages);
+  }
+
+  return newMessage;
 };

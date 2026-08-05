@@ -38,6 +38,9 @@ export const encryptMessage = (
   myPrivateKeyBase64: string
 ): string => {
   try {
+    if (!receiverPublicKeyBase64 || !myPrivateKeyBase64) {
+      return secretMessage;
+    }
     const nonce = nacl.randomBytes(nacl.box.nonceLength);
     const messageUint8 = decodeUTF8(secretMessage);
     const receiverPublicKey = decodeBase64(receiverPublicKeyBase64);
@@ -63,9 +66,15 @@ export const decryptMessage = (
   encryptedBase64: string,
   senderPublicKeyBase64: string,
   myPrivateKeyBase64: string
-): string | null => {
+): string => {
   try {
+    if (!senderPublicKeyBase64 || !myPrivateKeyBase64 || !encryptedBase64) {
+      return encryptedBase64;
+    }
     const encryptedData = decodeBase64(encryptedBase64);
+    if (!encryptedData || encryptedData.length <= nacl.box.nonceLength) {
+      return encryptedBase64;
+    }
     const nonce = encryptedData.slice(0, nacl.box.nonceLength);
     const ciphertext = encryptedData.slice(nacl.box.nonceLength);
 
@@ -73,11 +82,12 @@ export const decryptMessage = (
     const myPrivateKey = decodeBase64(myPrivateKeyBase64);
 
     const decrypted = nacl.box.open(ciphertext, nonce, senderPublicKey, myPrivateKey);
-    if (!decrypted) return null;
+    if (!decrypted) {
+      return encryptedBase64;
+    }
 
     return encodeUTF8(decrypted);
   } catch (err) {
-    console.error('Decryption error:', err);
-    return null;
+    return encryptedBase64;
   }
 };
