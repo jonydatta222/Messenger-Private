@@ -127,14 +127,15 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
           <button
             type="button"
             onClick={startRecording}
-            className="px-2.5 py-1 bg-red-800 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors"
+            className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1"
           >
-            {lang === 'bn' ? 'পুনরায় চেষ্টা' : 'Retry'}
+            <Mic className="w-3.5 h-3.5" />
+            <span>{lang === 'bn' ? 'অনুমতি দিন (Allow)' : 'Grant Mic'}</span>
           </button>
           <button
             type="button"
             onClick={onCancel}
-            className="p-1 text-slate-400 hover:text-white transition-colors"
+            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <Trash2 className="w-4 h-4" />
           </button>

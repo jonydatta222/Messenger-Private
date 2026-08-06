@@ -3,6 +3,7 @@ import { X, Send, Lock, Ban, MessageSquare, ChevronDown, Users, Trash2, CornerUp
 import { UserProfile, Message } from '../types';
 import { getUnreadCount, sendTextMessage, subscribeToMessages, markMessagesAsRead, getConversationsForUser } from '../services/chatService';
 import { decryptMessage } from '../services/encryptionService';
+import { playNotificationChime, triggerVibration } from '../services/notificationService';
 
 
 interface SwipeableChatHeadMessageProps {
@@ -201,6 +202,7 @@ interface FloatingChatHeadProps {
   onSelectPartner: (partnerId: string) => void;
   onCloseFloatingHead: () => void;
   lang: 'bn' | 'en';
+  isOutsideApp?: boolean;
 }
 
 export const FloatingChatHead: React.FC<FloatingChatHeadProps> = ({
@@ -210,6 +212,7 @@ export const FloatingChatHead: React.FC<FloatingChatHeadProps> = ({
   onSelectPartner,
   onCloseFloatingHead,
   lang,
+  isOutsideApp,
 }) => {
   // Start CLOSED as bubble by default (don't auto-open chat window)
   const [isOpen, setIsOpen] = useState(false);
@@ -529,7 +532,7 @@ export const FloatingChatHead: React.FC<FloatingChatHeadProps> = ({
     const currentX = position ? position.x : window.innerWidth - 76;
     const currentY = position ? position.y : window.innerHeight - 76;
 
-    const style: React.CSSProperties = { position: 'fixed', zIndex: 50 };
+    const style: React.CSSProperties = { position: 'fixed', zIndex: 9999 };
 
     // Vertical alignment: place above bubble if on lower screen half, below bubble if upper half
     if (currentY > 400) {
@@ -555,14 +558,14 @@ export const FloatingChatHead: React.FC<FloatingChatHeadProps> = ({
         position: 'fixed',
         left: `${position.x}px`,
         top: `${position.y}px`,
-        zIndex: 50,
+        zIndex: 9999,
       };
     }
     return {
       position: 'fixed',
       bottom: '24px',
       right: '24px',
-      zIndex: 50,
+      zIndex: 9999,
     };
   };
 

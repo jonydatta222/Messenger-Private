@@ -31,6 +31,12 @@ import {
 } from './services/chatService';
 import { UserProfile, CallState, Group, CallSignal, Message } from './types';
 import { ArrowLeft, MessageSquare, Plus, Lock, Phone, LogOut } from 'lucide-react';
+import { 
+  playNotificationChime, 
+  triggerVibration, 
+  flashDocumentTitle, 
+  requestNotificationPermission 
+} from './services/notificationService';
 
 export default function App() {
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -319,14 +325,10 @@ export default function App() {
 
   // Request browser notification permission if supported
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      if (Notification.permission === 'default') {
-        Notification.requestPermission().catch(() => {});
-      }
-    }
+    requestNotificationPermission().catch(() => {});
   }, []);
 
-  // Check for new incoming messages and trigger Direct Reply Notification Popup & Chat Head
+  // Check for new incoming messages and trigger Direct Reply Notification Popup & Chat Head & Sound/Vibration
   const checkNewIncomingMessages = (currUser: UserProfile, loadedUsers: UserProfile[]) => {
     const allMsgs = getMessages();
     const myIncomingMsgs = allMsgs.filter((m) => m.receiverId === currUser.uid && m.senderId !== currUser.uid);
@@ -334,13 +336,30 @@ export default function App() {
     if (myIncomingMsgs.length > 0) {
       const latest = myIncomingMsgs[myIncomingMsgs.length - 1];
 
-      if (lastKnownMsgIdRef.current && latest.id !== lastKnownMsgIdRef.current) {
+      // Initializing on first run if null
+      if (!lastKnownMsgIdRef.current) {
+        lastKnownMsgIdRef.current = latest.id;
+        return;
+      }
+
+      if (latest.id !== lastKnownMsgIdRef.current) {
+        lastKnownMsgIdRef.current = latest.id;
         setIsFloatingHeadActive(true);
         const sender = loadedUsers.find((u) => u.uid === latest.senderId) || null;
+        const senderName = sender ? sender.displayName : 'Messenger';
 
-        // Send OS notification if supported/granted (when user clicks it, it opens Quick Reply)
+        // Play sound chime & vibrate
+        playNotificationChime();
+        triggerVibration([200, 100, 200]);
+        flashDocumentTitle(`💬 ${senderName}`);
+
+        // Set Toast Banner & Quick Reply Overlay
+        showToast(lang === 'bn' ? `নতুন মেসেজ: ${senderName}` : `New message from ${senderName}`);
+        setQuickReplyMsg(latest);
+        setQuickReplySender(sender);
+
+        // Send OS notification if supported/granted
         if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-          const senderName = sender ? sender.displayName : 'Messenger';
           try {
             const notif = new Notification(senderName, {
               body: lang === 'bn' ? 'নতুন মেসেজ এসেছে' : 'New SMS received',
@@ -358,7 +377,6 @@ export default function App() {
           }
         }
       }
-      lastKnownMsgIdRef.current = latest.id;
     }
   };
 
@@ -380,6 +398,8 @@ export default function App() {
       read: false,
     };
 
+    playNotificationChime();
+    triggerVibration();
     setQuickReplyMsg(dummyMsg);
     setQuickReplySender(partner);
   };
@@ -416,16 +436,47 @@ export default function App() {
     const handleAppVisibilityChange = () => {
       const isHidden = typeof document !== 'undefined' ? document.hidden : false;
       setIsOutsideApp(isHidden);
+      if (isHidden) {
+        // Automatically activate Chat Head when minimized
+        setIsFloatingHeadActive(true);
+      } else {
+        fetchAllFromFirestore();
+      }
     };
 
     window.addEventListener('e2ee_messenger_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
     document.addEventListener('visibilitychange', handleAppVisibilityChange);
 
+    // Capacitor Native App Lifecycle listener for background execution
+    let capAppListener: any = null;
+    if (Capacitor.isNativePlatform()) {
+      CapApp.addListener('appStateChange', ({ isActive }) => {
+        setIsOutsideApp(!isActive);
+        if (!isActive) {
+          // Automatically activate Chat Head when minimized on native
+          setIsFloatingHeadActive(true);
+        } else {
+          fetchAllFromFirestore();
+        }
+      }).then((l) => {
+        capAppListener = l;
+      });
+    }
+
+    // Periodic Firestore Background Polling (keeps background syncing alive every 8s)
+    const backgroundSyncInterval = setInterval(() => {
+      fetchAllFromFirestore();
+    }, 8000);
+
     return () => {
       window.removeEventListener('e2ee_messenger_updated', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
       document.removeEventListener('visibilitychange', handleAppVisibilityChange);
+      if (capAppListener) {
+        capAppListener.remove();
+      }
+      clearInterval(backgroundSyncInterval);
     };
   }, [lang]);
 
@@ -754,8 +805,8 @@ export default function App() {
         )}
       </div>
 
-      {/* Floating Chat Head Mode - ONLY rendered when OUTSIDE the app */}
-      {isOutsideApp && isFloatingHeadActive && (
+      {/* Floating Chat Head Mode - ONLY rendered when OUTSIDE/MINIMIZED the app */}
+      {isOutsideApp && isFloatingHeadActive && currentUser && (
         <FloatingChatHead
           currentUser={currentUser}
           partners={users.filter((u) => u.uid !== currentUser.uid)}
@@ -766,6 +817,7 @@ export default function App() {
           }}
           onCloseFloatingHead={() => setIsFloatingHeadActive(false)}
           lang={lang}
+          isOutsideApp={isOutsideApp}
         />
       )}
 

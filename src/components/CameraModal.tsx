@@ -66,8 +66,8 @@ export const CameraModal: React.FC<CameraModalProps> = ({
       console.error('Camera access error:', err);
       setError(
         lang === 'bn'
-          ? 'ক্যামেরা চালু করা সম্ভব হয়নি। ডিভাইসের ক্যামেরা পারমিশন দেওয়া আছে কিনা চেক করুন অথবা সরাসরি গ্যালারি/ক্যামেরা থেকে ছবি আপলোড করুন।'
-          : 'Failed to access camera. Please verify camera permissions or upload directly from gallery/camera app.'
+          ? 'ক্যামেরা চালু করা সম্ভব হয়নি। নিচের বোতাম চেপে অনুমতি দিন অথবা গ্যালারি/ক্যামেরা থেকে ছবি আপলোড করুন।'
+          : 'Camera access blocked. Tap the button below to grant permission or upload photo directly.'
       );
     } finally {
       setIsInitializing(false);

@@ -274,9 +274,18 @@ export const CallModal: React.FC<CallModalProps> = ({
 
         {/* Media Error Warning Banner */}
         {mediaError && (
-          <div className="mt-8 mb-2 p-2.5 bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs rounded-xl flex items-center gap-2 text-center font-medium">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{mediaError}</span>
+          <div className="mt-8 mb-2 p-3 bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs rounded-2xl flex flex-col items-center gap-2 text-center font-medium w-full">
+            <div className="flex items-center gap-1.5">
+              <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+              <span>{mediaError}</span>
+            </div>
+            <button
+              onClick={() => initMediaStream(facingMode)}
+              className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-[11px] rounded-xl shadow transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <Mic className="w-3.5 h-3.5" />
+              <span>{lang === 'bn' ? 'পারমিশন অনুমতি দিন' : 'Grant Permission'}</span>
+            </button>
           </div>
         )}
 
