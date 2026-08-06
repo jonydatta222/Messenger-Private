@@ -36,6 +36,9 @@ export const CallModal: React.FC<CallModalProps> = ({
   // Play synthetic telephone ringtone using Web Audio API
   const playRingtonePulse = () => {
     try {
+      if (typeof localStorage !== 'undefined' && localStorage.getItem('app_silent_mode') === 'true') {
+        return; // Silent mode active
+      }
       if (!audioCtxRef.current) {
         audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       }

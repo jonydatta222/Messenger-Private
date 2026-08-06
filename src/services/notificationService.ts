@@ -2,10 +2,25 @@
 
 let audioCtx: AudioContext | null = null;
 
+// Check if silent mode is enabled
+export const isAppSilentMode = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem('app_silent_mode') === 'true';
+};
+
+export const setAppSilentMode = (silent: boolean) => {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem('app_silent_mode', silent ? 'true' : 'false');
+  window.dispatchEvent(new Event('e2ee_messenger_updated'));
+};
+
 // Synthesize pleasant double-chime notification sound using Web Audio API
 export const playNotificationChime = () => {
   try {
     if (typeof window === 'undefined') return;
+    // Check if user set silent mode / mute sound
+    if (isAppSilentMode()) return;
+
     if (!audioCtx) {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioContextClass) {
@@ -64,11 +79,60 @@ export const requestNotificationPermission = async (): Promise<boolean> => {
   if (typeof window !== 'undefined' && 'Notification' in window) {
     if (Notification.permission === 'granted') return true;
     if (Notification.permission !== 'denied') {
-      const perm = await Notification.requestPermission();
-      return perm === 'granted';
+      try {
+        const perm = await Notification.requestPermission();
+        return perm === 'granted';
+      } catch {
+        return false;
+      }
     }
   }
   return false;
+};
+
+// Dispatch System Notification (Android / Desktop / ServiceWorker compatible)
+export const sendSystemNotification = async (
+  title: string,
+  body: string,
+  iconUrl?: string,
+  onClick?: () => void
+) => {
+  if (typeof window === 'undefined' || !('Notification' in window)) return;
+
+  if (Notification.permission !== 'granted') {
+    const granted = await requestNotificationPermission();
+    if (!granted) return;
+  }
+
+  const options: any = {
+    body,
+    icon: iconUrl || '/icon.png',
+    badge: '/icon.png',
+    tag: 'sms_notification_' + Date.now(),
+    vibrate: [200, 100, 200],
+    requireInteraction: true,
+  };
+
+  try {
+    // Try Service Worker registration first (recommended for mobile Android)
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg && reg.showNotification) {
+        await reg.showNotification(title, options);
+        return;
+      }
+    }
+
+    // Standard Notification Fallback
+    const notif = new Notification(title, options);
+    notif.onclick = () => {
+      window.focus();
+      if (onClick) onClick();
+      notif.close();
+    };
+  } catch (err) {
+    console.debug('System notification error:', err);
+  }
 };
 
 // Global Title Flash alert

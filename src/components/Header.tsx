@@ -10,9 +10,12 @@ import {
   Settings,
   ChevronRight,
   X,
-  Bell
+  Bell,
+  VolumeX,
+  Volume2
 } from 'lucide-react';
 import { UserProfile } from '../types';
+import { isAppSilentMode, setAppSilentMode } from '../services/notificationService';
 
 interface HeaderProps {
   currentUser: UserProfile;
@@ -44,7 +47,14 @@ export const Header: React.FC<HeaderProps> = ({
   onTestNotificationReply,
 }) => {
   const [showSettings, setShowSettings] = useState(false);
+  const [isSilent, setIsSilent] = useState<boolean>(() => isAppSilentMode());
   const settingsRef = useRef<HTMLDivElement>(null);
+
+  const handleToggleSilent = () => {
+    const next = !isSilent;
+    setIsSilent(next);
+    setAppSilentMode(next);
+  };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -157,6 +167,39 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             <div className="py-2 space-y-2">
+              {/* Silent Mode / Mute Sound Toggle */}
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 hover:bg-orange-50/50 dark:hover:bg-slate-800 border border-slate-100 dark:border-slate-800 transition-colors">
+                <div className="flex items-center gap-2.5 pr-2">
+                  <div className={`w-8 h-8 rounded-lg ${isSilent ? 'bg-red-100 dark:bg-red-950/60' : 'bg-blue-100 dark:bg-blue-950/60'} flex items-center justify-center shrink-0`}>
+                    {isSilent ? (
+                      <VolumeX className="w-4 h-4 text-red-600 dark:text-red-400" />
+                    ) : (
+                      <Volume2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-xs text-slate-900 dark:text-slate-100">
+                      {lang === 'bn' ? 'সাইলেন্ট মোড (Silent Mode)' : 'Silent Mode'}
+                    </h4>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                      {lang === 'bn' ? 'অ্যাপসের সাউন্ড সম্পূর্ণ বন্ধ রাখুন' : 'Mute all app notification sounds'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleToggleSilent}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    isSilent ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-700'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                      isSilent ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
               {/* 1. Chat Head Option */}
               {onToggleFloatingHead && (
                 <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 hover:bg-orange-50/50 dark:hover:bg-slate-800 border border-slate-100 dark:border-slate-800 transition-colors">

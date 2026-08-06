@@ -29,13 +29,15 @@ import {
   sendCallLogMessage,
   normalizePhone
 } from './services/chatService';
+import { decryptMessage } from './services/encryptionService';
 import { UserProfile, CallState, Group, CallSignal, Message } from './types';
 import { ArrowLeft, MessageSquare, Plus, Lock, Phone, LogOut } from 'lucide-react';
 import { 
   playNotificationChime, 
   triggerVibration, 
   flashDocumentTitle, 
-  requestNotificationPermission 
+  requestNotificationPermission,
+  sendSystemNotification 
 } from './services/notificationService';
 
 export default function App() {
@@ -328,7 +330,7 @@ export default function App() {
     requestNotificationPermission().catch(() => {});
   }, []);
 
-  // Check for new incoming messages and trigger Direct Reply Notification Popup & Chat Head & Sound/Vibration
+  // Check for new incoming messages and trigger Phone System Notification & Chat Head
   const checkNewIncomingMessages = (currUser: UserProfile, loadedUsers: UserProfile[]) => {
     const allMsgs = getMessages();
     const myIncomingMsgs = allMsgs.filter((m) => m.receiverId === currUser.uid && m.senderId !== currUser.uid);
@@ -344,37 +346,50 @@ export default function App() {
 
       if (latest.id !== lastKnownMsgIdRef.current) {
         lastKnownMsgIdRef.current = latest.id;
-        setIsFloatingHeadActive(true);
         const sender = loadedUsers.find((u) => u.uid === latest.senderId) || null;
         const senderName = sender ? sender.displayName : 'Messenger';
+
+        // Decrypt actual SMS content for notification
+        let previewText = latest.text;
+        if (latest.type === 'image') {
+          previewText = lang === 'bn' ? '📷 [ছবি]' : '📷 [Photo]';
+        } else if (latest.type === 'voice') {
+          previewText = lang === 'bn' ? '🎤 [ভয়েস মেসেজ]' : '🎤 [Voice Message]';
+        } else if (latest.type === 'call') {
+          previewText = lang === 'bn' ? '📞 [কল]' : '📞 [Call]';
+        } else if (sender?.publicKey && currUser?.secretKey) {
+          previewText = decryptMessage(latest.text || '', sender.publicKey, currUser.secretKey);
+        }
 
         // Play sound chime & vibrate
         playNotificationChime();
         triggerVibration([200, 100, 200]);
-        flashDocumentTitle(`💬 ${senderName}`);
 
-        // Set Toast Banner & Quick Reply Overlay
-        showToast(lang === 'bn' ? `নতুন মেসেজ: ${senderName}` : `New message from ${senderName}`);
-        setQuickReplyMsg(latest);
-        setQuickReplySender(sender);
+        // Check if app is minimized / outside app
+        const isCurrentlyOutside = isOutsideApp || (typeof document !== 'undefined' && document.hidden);
 
-        // Send OS notification if supported/granted
-        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-          try {
-            const notif = new Notification(senderName, {
-              body: lang === 'bn' ? 'নতুন মেসেজ এসেছে' : 'New SMS received',
-              icon: sender?.photoURL || '/icon.png',
-            });
-            notif.onclick = () => {
-              if (typeof window !== 'undefined') {
-                window.focus();
-              }
+        if (isCurrentlyOutside) {
+          // MINIMIZED / OUTSIDE APP:
+          setIsFloatingHeadActive(true);
+          flashDocumentTitle(`💬 ${senderName}: ${previewText}`);
+
+          setQuickReplyMsg(latest);
+          setQuickReplySender(sender);
+
+          // Send Phone OS System Notification showing exact SMS text
+          sendSystemNotification(
+            senderName,
+            previewText,
+            sender?.photoURL,
+            () => {
               setQuickReplyMsg(latest);
               setQuickReplySender(sender);
-            };
-          } catch {
-            // ignore notification error
-          }
+              setIsFloatingHeadActive(true);
+            }
+          );
+        } else {
+          // INSIDE APP:
+          // Do NOT pop up intrusive quick reply overlay or system banner when active inside app
         }
       }
     }
@@ -400,8 +415,19 @@ export default function App() {
 
     playNotificationChime();
     triggerVibration();
+    setIsFloatingHeadActive(true);
     setQuickReplyMsg(dummyMsg);
     setQuickReplySender(partner);
+
+    sendSystemNotification(
+      partner.displayName,
+      dummyMsg.text,
+      partner.photoURL,
+      () => {
+        setQuickReplyMsg(dummyMsg);
+        setQuickReplySender(partner);
+      }
+    );
   };
 
   // Load state on mount & listen to real-time events
