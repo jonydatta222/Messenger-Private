@@ -210,7 +210,7 @@ export const ChatList: React.FC<ChatListProps> = ({
         <div className="flex items-center justify-between">
           <h2 className="font-bold text-slate-900 dark:text-slate-100 text-sm flex items-center gap-2">
             <MessageCircle className="w-4 h-4 text-orange-500" />
-            {lang === 'bn' ? 'বার্তা ও গ্রুপ ইনবক্স' : 'Messages & Groups'}
+            {lang === 'bn' ? 'বার্তা ও গ্রুপ' : 'Messages & Groups'}
           </h2>
           <button
             onClick={activeTab === 'groups' ? onOpenCreateGroup : onOpenAddContact}
@@ -224,7 +224,7 @@ export const ChatList: React.FC<ChatListProps> = ({
         </div>
 
         {/* My Chats vs Groups Tabs */}
-        <div className="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold">
+        <div className="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 border border-slate-200 dark:border-slate-700 text-xs font-semibold gap-1">
           <button
             onClick={() => setActiveTab('my_chats')}
             className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
@@ -233,8 +233,8 @@ export const ChatList: React.FC<ChatListProps> = ({
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
-            <MessageCircle className="w-3.5 h-3.5" />
-            <span>{lang === 'bn' ? `আমার ইনবক্স (${myConversations.length})` : `My Inbox (${myConversations.length})`}</span>
+            <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>{lang === 'bn' ? `ইনবক্স (${myConversations.length})` : `Inbox (${myConversations.length})`}</span>
           </button>
 
           <button
@@ -245,8 +245,8 @@ export const ChatList: React.FC<ChatListProps> = ({
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
-            <Users className="w-3.5 h-3.5" />
-            <span>{lang === 'bn' ? `গ্রুপসমূহ (${myGroups.length})` : `Groups (${myGroups.length})`}</span>
+            <Users className="w-3.5 h-3.5 shrink-0" />
+            <span>{lang === 'bn' ? `গ্রুপ (${myGroups.length})` : `Groups (${myGroups.length})`}</span>
           </button>
         </div>
 
@@ -402,8 +402,8 @@ export const ChatList: React.FC<ChatListProps> = ({
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
                   {lang === 'bn'
-                    ? 'উপরে "যোগ করুন" বাটনে ক্লিক করে নিবন্ধিত ফোন নাম্বার প্রদান করুন।'
-                    : 'Click "Add Contact" above to start chat with a registered phone number.'}
+                    ? 'উপরে "যোগ করুন" বাটনে ক্লিক করে নিবন্ধিত ফোন নাম্বার দিয়ে চ্যাট শুরু করুন।'
+                    : 'Click "Add Contact" above to start a chat with any registered phone number.'}
                 </p>
               </div>
             </div>

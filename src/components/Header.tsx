@@ -9,7 +9,8 @@ import {
   Moon,
   Settings,
   ChevronRight,
-  X
+  X,
+  Bell
 } from 'lucide-react';
 import { UserProfile } from '../types';
 
@@ -25,6 +26,7 @@ interface HeaderProps {
   onToggleFloatingHead?: () => void;
   onOpenEncryptionInfo?: () => void;
   onOpenPermissionsGuide?: () => void;
+  onTestNotificationReply?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -39,6 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleFloatingHead,
   onOpenEncryptionInfo,
   onOpenPermissionsGuide,
+  onTestNotificationReply,
 }) => {
   const [showSettings, setShowSettings] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -234,6 +237,32 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-orange-500 transition-colors" />
+                </button>
+              )}
+
+              {/* 4. Test Direct Notification Reply */}
+              {onTestNotificationReply && (
+                <button
+                  onClick={() => {
+                    setShowSettings(false);
+                    onTestNotificationReply();
+                  }}
+                  className="w-full flex items-center justify-between p-2.5 rounded-xl bg-gradient-to-r from-orange-500/10 to-amber-500/10 hover:from-orange-500/20 hover:to-amber-500/20 border border-orange-500/20 transition-colors cursor-pointer text-left group"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-orange-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                      <Bell className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs text-orange-600 dark:text-orange-400">
+                        {lang === 'bn' ? 'নোটিফিকেশন থেকে সরাসরি রিপ্লাই' : 'Test Notification Reply'}
+                      </h4>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                        {lang === 'bn' ? 'মেসেজ নোটিফিকেশন রিপ্লাই পরীক্ষা করুন' : 'Test notification reply'}
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-orange-500 group-hover:translate-x-0.5 transition-transform" />
                 </button>
               )}
             </div>

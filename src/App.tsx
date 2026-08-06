@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { App as CapApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import { Header } from './components/Header';
 import { ChatList } from './components/ChatList';
 import { ChatScreen } from './components/ChatScreen';
@@ -10,6 +12,7 @@ import { EncryptionInfoModal } from './components/EncryptionInfoModal';
 import { PermissionsGuideModal } from './components/PermissionsGuideModal';
 import { CreateGroupModal } from './components/CreateGroupModal';
 import { AuthScreen } from './components/AuthScreen';
+import { NotificationQuickReply } from './components/NotificationQuickReply';
 import { 
   getUsers, 
   getCurrentUserProfile, 
@@ -23,9 +26,10 @@ import {
   sendCallSignal,
   updateCallSignalStatus,
   subscribeToCallSignals,
-  sendCallLogMessage
+  sendCallLogMessage,
+  normalizePhone
 } from './services/chatService';
-import { UserProfile, CallState, Group, CallSignal } from './types';
+import { UserProfile, CallState, Group, CallSignal, Message } from './types';
 import { ArrowLeft, MessageSquare, Plus, Lock, Phone, LogOut } from 'lucide-react';
 
 export default function App() {
@@ -107,14 +111,17 @@ export default function App() {
   const [showLogoutConfirmModal, setShowLogoutConfirmModal] = useState(false);
   const [activeCall, setActiveCall] = useState<CallState | null>(null);
   const [incomingCall, setIncomingCall] = useState<CallSignal | null>(null);
+  const [quickReplyMsg, setQuickReplyMsg] = useState<Message | null>(null);
+  const [quickReplySender, setQuickReplySender] = useState<UserProfile | null>(null);
 
   // Ref to hold sub-modal closer from ChatScreen
   const chatSubModalCloseRef = useRef<(() => boolean) | null>(null);
 
-  // Open state ref for Back button (popstate) step-by-step navigation
+  // Open state ref for Back button (popstate / capacitor backButton) step-by-step navigation
   const openStateRef = useRef({
     activeCall,
     incomingCall,
+    quickReplyMsg,
     showAddContactModal,
     showCreateGroupModal,
     showProfileModal,
@@ -130,6 +137,7 @@ export default function App() {
     openStateRef.current = {
       activeCall,
       incomingCall,
+      quickReplyMsg,
       showAddContactModal,
       showCreateGroupModal,
       showProfileModal,
@@ -143,6 +151,7 @@ export default function App() {
   }, [
     activeCall,
     incomingCall,
+    quickReplyMsg,
     showAddContactModal,
     showCreateGroupModal,
     showProfileModal,
@@ -169,57 +178,137 @@ export default function App() {
     }
   };
 
-  // Listen to popstate (Hardware / Browser back button) for step-by-step navigation
-  useEffect(() => {
-    const handlePopState = () => {
-      const cur = openStateRef.current;
+  // Timestamp of last back button press for double-tap exit prevention
+  const lastBackPressTimeRef = useRef<number>(0);
 
-      if (cur.activeCall) {
-        setActiveCall(null);
-        return;
+  // Master Back Navigation Handler for both Hardware Android Back Button & Browser PopState
+  const handleBackAction = (): boolean => {
+    const cur = openStateRef.current;
+
+    if (cur.activeCall) {
+      if (cur.activeCall.callId && currentUser) {
+        const partnerId = cur.activeCall.partnerId;
+        updateCallSignalStatus(
+          cur.activeCall.callId,
+          'ended',
+          currentUser.uid,
+          partnerId,
+          cur.activeCall.type || 'audio'
+        );
       }
-      if (cur.showAddContactModal) {
-        setShowAddContactModal(false);
-        setAddContactError(null);
-        setNewContactPhone('');
-        return;
+      setActiveCall(null);
+      return true;
+    }
+
+    if (cur.incomingCall) {
+      if (currentUser) {
+        updateCallSignalStatus(
+          cur.incomingCall.id,
+          'rejected',
+          cur.incomingCall.callerId,
+          cur.incomingCall.receiverId,
+          cur.incomingCall.type
+        );
       }
-      if (cur.showCreateGroupModal) {
-        setShowCreateGroupModal(false);
-        return;
+      setIncomingCall(null);
+      return true;
+    }
+
+    if (cur.quickReplyMsg) {
+      setQuickReplyMsg(null);
+      setQuickReplySender(null);
+      return true;
+    }
+
+    if (cur.showLogoutConfirmModal) {
+      setShowLogoutConfirmModal(false);
+      return true;
+    }
+
+    if (cur.showAddContactModal) {
+      setShowAddContactModal(false);
+      setAddContactError(null);
+      setNewContactPhone('');
+      return true;
+    }
+
+    if (cur.showCreateGroupModal) {
+      setShowCreateGroupModal(false);
+      return true;
+    }
+
+    if (cur.showProfileModal) {
+      setShowProfileModal(false);
+      return true;
+    }
+
+    if (cur.showEncryptionInfoModal) {
+      setShowEncryptionInfoModal(false);
+      return true;
+    }
+
+    if (cur.showPermissionsGuideModal) {
+      setShowPermissionsGuideModal(false);
+      return true;
+    }
+
+    if (cur.chatSubModalCloseRef.current) {
+      const closed = cur.chatSubModalCloseRef.current();
+      if (closed) return true;
+    }
+
+    if (cur.selectedPartnerId || cur.selectedGroupId) {
+      setSelectedPartnerId(null);
+      setSelectedGroupId(null);
+      return true;
+    }
+
+    // If on root main screen (ChatList or AuthScreen):
+    // Require pressing Back twice within 2 seconds to exit the app
+    const now = Date.now();
+    if (now - lastBackPressTimeRef.current < 2000) {
+      if (Capacitor.isNativePlatform()) {
+        CapApp.exitApp();
       }
-      if (cur.showProfileModal) {
-        setShowProfileModal(false);
-        return;
-      }
-      if (cur.showEncryptionInfoModal) {
-        setShowEncryptionInfoModal(false);
-        return;
-      }
-      if (cur.showPermissionsGuideModal) {
-        setShowPermissionsGuideModal(false);
-        return;
-      }
-      if (cur.showLogoutConfirmModal) {
-        setShowLogoutConfirmModal(false);
-        return;
-      }
-      if (cur.chatSubModalCloseRef.current) {
-        const closed = cur.chatSubModalCloseRef.current();
-        if (closed) return;
-      }
-      if (cur.selectedPartnerId || cur.selectedGroupId) {
-        setSelectedPartnerId(null);
-        setSelectedGroupId(null);
-        return;
-      }
+      return true;
+    }
+
+    lastBackPressTimeRef.current = now;
+    setToastMessage(
+      lang === 'bn'
+        ? 'অ্যাপস থেকে বের হতে আবার ব্যাক চাপুন'
+        : 'Press back again to exit app'
+    );
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 2000);
+    return true;
+  };
+
+  // Register Capacitor Native Back Button listener and Browser PopState listener
+  useEffect(() => {
+    let listenerHandler: any = null;
+
+    if (Capacitor.isNativePlatform()) {
+      CapApp.addListener('backButton', () => {
+        handleBackAction();
+      }).then((h) => {
+        listenerHandler = h;
+      });
+    }
+
+    const handlePopState = () => {
+      handleBackAction();
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => {
+      if (listenerHandler) {
+        listenerHandler.remove();
+      }
       window.removeEventListener('popstate', handlePopState);
     };
-  }, []);
+  }, [lang]);
 
   // New Contact Form State
   const [newContactPhone, setNewContactPhone] = useState('');
@@ -237,7 +326,7 @@ export default function App() {
     }
   }, []);
 
-  // Check for new incoming messages and trigger Floating Chat Head
+  // Check for new incoming messages and trigger Direct Reply Notification Popup & Chat Head
   const checkNewIncomingMessages = (currUser: UserProfile, loadedUsers: UserProfile[]) => {
     const allMsgs = getMessages();
     const myIncomingMsgs = allMsgs.filter((m) => m.receiverId === currUser.uid && m.senderId !== currUser.uid);
@@ -247,17 +336,23 @@ export default function App() {
 
       if (lastKnownMsgIdRef.current && latest.id !== lastKnownMsgIdRef.current) {
         setIsFloatingHeadActive(true);
-        setSelectedPartnerId(latest.senderId);
-        setSelectedGroupId(null);
+        const sender = loadedUsers.find((u) => u.uid === latest.senderId) || null;
 
+        // Send OS notification if supported/granted (when user clicks it, it opens Quick Reply)
         if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-          const sender = loadedUsers.find((u) => u.uid === latest.senderId);
           const senderName = sender ? sender.displayName : 'Messenger';
           try {
-            new Notification(senderName, {
-              body: lang === 'bn' ? 'নতুন মেসেজ এসেছে (চ্যাট হেডে দেখুন)' : 'New SMS received (view in Chat Head)',
+            const notif = new Notification(senderName, {
+              body: lang === 'bn' ? 'নতুন মেসেজ এসেছে' : 'New SMS received',
               icon: sender?.photoURL || '/icon.png',
             });
+            notif.onclick = () => {
+              if (typeof window !== 'undefined') {
+                window.focus();
+              }
+              setQuickReplyMsg(latest);
+              setQuickReplySender(sender);
+            };
           } catch {
             // ignore notification error
           }
@@ -265,6 +360,28 @@ export default function App() {
       }
       lastKnownMsgIdRef.current = latest.id;
     }
+  };
+
+  // Demo Trigger to test Direct Notification Reply
+  const triggerTestNotificationReply = () => {
+    if (!currentUser) return;
+    const loadedUsers = getUsers();
+    const partner = loadedUsers.find((u) => u.uid !== currentUser.uid) || loadedUsers[0];
+    if (!partner) return;
+
+    const dummyMsg: Message = {
+      id: 'test_sms_' + Date.now(),
+      senderId: partner.uid,
+      receiverId: currentUser.uid,
+      text: lang === 'bn' 
+        ? 'হাই! কেমন আছেন? আপনাকে একটি মেসেজ পাঠিয়েছি।'
+        : 'Hi! How are you doing? I sent you a message.',
+      timestamp: Date.now(),
+      read: false,
+    };
+
+    setQuickReplyMsg(dummyMsg);
+    setQuickReplySender(partner);
   };
 
   // Load state on mount & listen to real-time events
@@ -385,6 +502,8 @@ export default function App() {
         onAuthSuccess={handleAuthSuccess}
         lang={lang}
         onToggleLang={() => setLang(lang === 'bn' ? 'en' : 'bn')}
+        darkMode={darkMode}
+        onToggleDarkMode={() => setDarkMode((prev) => !prev)}
       />
     );
   }
@@ -415,8 +534,10 @@ export default function App() {
       return;
     }
 
-    const currentPhoneClean = (currentUser?.phone || '').replace(/[\s-]/g, '').trim();
-    if (currentPhoneClean && currentPhoneClean === cleanPhone) {
+    const currentPhoneNorm = normalizePhone(currentUser?.phone || '');
+    const searchNorm = normalizePhone(cleanPhone);
+
+    if (currentPhoneNorm && currentPhoneNorm === searchNorm) {
       setAddContactError(
         lang === 'bn'
           ? 'আপনি আপনার নিজের ফোনে বার্তা পাঠাতে পারবেন না।'
@@ -424,9 +545,6 @@ export default function App() {
       );
       return;
     }
-
-    const normalizePhone = (p: string) => p.replace(/[\s\-\+\(\)]/g, '').replace(/^88/, '');
-    const searchNorm = normalizePhone(cleanPhone);
 
     let loadedUsers = getUsers();
     let existingUser = loadedUsers.find((u) => {
@@ -569,6 +687,7 @@ export default function App() {
             setShowPermissionsGuideModal(true);
             pushNavState('permissionsGuide');
           }}
+          onTestNotificationReply={triggerTestNotificationReply}
           onLogout={handleRequestLogout}
         />
       )}
@@ -808,6 +927,26 @@ export default function App() {
           isAccepted={activeCall.status === 'connected'}
           onEndCall={handleEndActiveCall}
           lang={lang}
+        />
+      )}
+
+      {/* Direct Quick Reply Notification Overlay */}
+      {quickReplyMsg && quickReplySender && currentUser && (
+        <NotificationQuickReply
+          incomingMsg={quickReplyMsg}
+          sender={quickReplySender}
+          currentUser={currentUser}
+          lang={lang}
+          onDismiss={() => {
+            setQuickReplyMsg(null);
+            setQuickReplySender(null);
+          }}
+          onOpenChat={(senderId) => {
+            setSelectedPartnerId(senderId);
+            setSelectedGroupId(null);
+            setQuickReplyMsg(null);
+            setQuickReplySender(null);
+          }}
         />
       )}
 

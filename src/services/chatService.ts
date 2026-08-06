@@ -20,7 +20,20 @@ const STORAGE_AUTH_SESSION_KEY = 'e2ee_messenger_auth_session_uid';
 const STORAGE_GROUPS_KEY = 'e2ee_messenger_groups';
 
 export const DEFAULT_USERS: UserProfile[] = [];
-const DEMO_UIDS = ['user_mehedi', 'user_sadia', 'user_tanvir', 'user_nusrat', 'user_joni', 'joni'];
+const DEMO_UIDS: string[] = [];
+
+// Helper to normalize phone numbers consistently across Bangladesh (+880, 880, 017...)
+export const normalizePhone = (phone: string): string => {
+  if (!phone) return '';
+  let digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('8801') && digits.length === 13) {
+    digits = '0' + digits.substring(3);
+  }
+  if (digits.length === 10 && digits.startsWith('1')) {
+    digits = '0' + digits;
+  }
+  return digits;
+};
 
 // Helper to remove undefined fields before sending to Firestore
 export const cleanForFirestore = <T extends Record<string, any>>(obj: T): Record<string, any> => {
@@ -48,13 +61,8 @@ export const getUsers = (): UserProfile[] => {
   }
   try {
     const parsed: UserProfile[] = JSON.parse(stored);
-    const cleanUsers = parsed.filter(
-      (u) =>
-        !DEMO_UIDS.includes(u.uid) &&
-        u.displayName?.toLowerCase() !== 'joni' &&
-        !u.uid.toLowerCase().includes('joni')
-    );
-    return cleanUsers;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((u) => u && typeof u === 'object' && u.uid && u.displayName);
   } catch {
     return [];
   }
@@ -285,8 +293,9 @@ export const signUpUser = async (
   email?: string
 ): Promise<{ success: boolean; user?: UserProfile; error?: string }> => {
   try {
-    const cleanPhone = (phone || '').replace(/[\s-]/g, '').trim();
-    if (!cleanPhone) {
+    const rawCleanPhone = (phone || '').replace(/[\s-]/g, '').trim();
+    const normPhone = normalizePhone(phone);
+    if (!rawCleanPhone || normPhone.length < 5) {
       return { success: false, error: 'বৈধ ফোন নাম্বার টাইপ করুন (Please enter a valid phone number)' };
     }
     if (!password || password.length < 4) {
@@ -296,16 +305,26 @@ export const signUpUser = async (
       return { success: false, error: 'আপনার নাম প্রদান করুন (Please enter your name)' };
     }
 
-    // Check existing phone in Firestore
-    const q = query(collection(db, 'users'), where('phone', '==', cleanPhone));
-    const existingSnap = await getDocs(q);
-    if (!existingSnap.empty) {
+    // Check existing phone in Firestore (checking both normalized and raw phone)
+    const q1 = query(collection(db, 'users'), where('phone', '==', normPhone));
+    const snap1 = await getDocs(q1);
+    if (!snap1.empty) {
       return { success: false, error: 'এই ফোন নাম্বার দিয়ে আগেই একাউন্ট খোলা হয়েছে (Phone number already registered)' };
+    }
+    if (rawCleanPhone !== normPhone) {
+      const q2 = query(collection(db, 'users'), where('phone', '==', rawCleanPhone));
+      const snap2 = await getDocs(q2);
+      if (!snap2.empty) {
+        return { success: false, error: 'এই ফোন নাম্বার দিয়ে আগেই একাউন্ট খোলা হয়েছে (Phone number already registered)' };
+      }
     }
 
     // Also check local cache fallback
     const localUsers = getUsers();
-    const existingLocal = localUsers.find((u) => (u.phone || '').replace(/[\s-]/g, '') === cleanPhone);
+    const existingLocal = localUsers.find((u) => {
+      const uNorm = normalizePhone(u.phone || '');
+      return uNorm === normPhone || u.phone === rawCleanPhone;
+    });
     if (existingLocal) {
       return { success: false, error: 'এই ফোন নাম্বার দিয়ে আগেই একাউন্ট খোলা হয়েছে (Phone number already registered)' };
     }
@@ -313,10 +332,10 @@ export const signUpUser = async (
     const keys = generateKeyPair();
     const newUser: UserProfile = {
       uid: `user_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      phone: cleanPhone,
+      phone: normPhone,
       password,
       displayName: displayName.trim(),
-      email: email?.trim() || `${cleanPhone}@messenger.app`,
+      email: email?.trim() || `${normPhone}@messenger.app`,
       photoURL: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(displayName.trim())}`,
       publicKey: keys.publicKey,
       secretKey: keys.secretKey,
@@ -333,6 +352,9 @@ export const signUpUser = async (
     saveUsersLocally(localUsers);
     setAuthSession(newUser.uid);
 
+    // Sync all remote users/data to ensure current phone has complete list
+    await fetchAllFromFirestore();
+
     return { success: true, user: newUser };
   } catch (err: any) {
     console.error('Sign up error:', err);
@@ -346,15 +368,40 @@ export const loginUser = async (
   password: string
 ): Promise<{ success: boolean; user?: UserProfile; error?: string }> => {
   try {
-    const cleanPhone = (phone || '').replace(/[\s-]/g, '').trim();
+    const rawCleanPhone = (phone || '').replace(/[\s-]/g, '').trim();
+    const normPhone = normalizePhone(phone);
 
-    // Query Firestore for this phone number first (ensures data restoration after uninstall!)
+    if (!normPhone && !rawCleanPhone) {
+      return { success: false, error: 'ফোন নাম্বার প্রদান করুন (Please enter phone number)' };
+    }
+
+    // Query Firestore for this phone number first (ensures data restoration on any new device!)
     let targetUser: UserProfile | null = null;
     try {
-      const q = query(collection(db, 'users'), where('phone', '==', cleanPhone));
-      const querySnap = await getDocs(q);
-      if (!querySnap.empty) {
-        targetUser = querySnap.docs[0].data() as UserProfile;
+      // 1. Try normalized phone query
+      const qNorm = query(collection(db, 'users'), where('phone', '==', normPhone));
+      const snapNorm = await getDocs(qNorm);
+      if (!snapNorm.empty) {
+        targetUser = snapNorm.docs[0].data() as UserProfile;
+      } else {
+        // 2. Try raw clean phone query
+        const qRaw = query(collection(db, 'users'), where('phone', '==', rawCleanPhone));
+        const snapRaw = await getDocs(qRaw);
+        if (!snapRaw.empty) {
+          targetUser = snapRaw.docs[0].data() as UserProfile;
+        } else {
+          // 3. Fallback: fetch all user docs and find matching normalized phone
+          const allDocs = await getDocs(collection(db, 'users'));
+          allDocs.forEach((d) => {
+            const uData = d.data() as UserProfile;
+            if (uData && uData.phone) {
+              const uNorm = normalizePhone(uData.phone);
+              if (uNorm === normPhone || uData.phone === rawCleanPhone) {
+                targetUser = uData;
+              }
+            }
+          });
+        }
       }
     } catch (e) {
       console.warn('Firestore user search error, trying local cache:', e);
@@ -363,7 +410,10 @@ export const loginUser = async (
     // Local fallback if Firestore fails or offline
     if (!targetUser) {
       const users = getUsers();
-      targetUser = users.find((u) => (u.phone || '').replace(/[\s-]/g, '') === cleanPhone) || null;
+      targetUser = users.find((u) => {
+        const uNorm = normalizePhone(u.phone || '');
+        return uNorm === normPhone || u.phone === rawCleanPhone;
+      }) || null;
     }
 
     if (!targetUser) {
@@ -374,22 +424,157 @@ export const loginUser = async (
       return { success: false, error: 'ভুল পাসওয়ার্ড দিয়েছেন! আবার চেষ্টা করুন (Incorrect password)' };
     }
 
-    // Save user locally & sync full history from Firestore
+    // Ensure user phone in object is normalized
+    targetUser.phone = normPhone || targetUser.phone;
+
+    // Save user locally & sync full history from Firestore BEFORE returning
     const localUsers = getUsers();
-    if (!localUsers.some((u) => u.uid === targetUser!.uid)) {
+    const existingIndex = localUsers.findIndex((u) => u.uid === targetUser!.uid);
+    if (existingIndex >= 0) {
+      localUsers[existingIndex] = targetUser;
+    } else {
       localUsers.push(targetUser);
-      saveUsersLocally(localUsers);
     }
+    saveUsersLocally(localUsers);
 
     setAuthSession(targetUser.uid);
 
-    // Trigger full Firestore sync so all past messages and groups are pulled in
-    fetchAllFromFirestore();
+    // Trigger full Firestore sync so all past messages and groups are pulled in immediately
+    await fetchAllFromFirestore();
 
     return { success: true, user: targetUser };
   } catch (err: any) {
     console.error('Login error:', err);
     return { success: false, error: err?.message || 'লগইনে সমস্যা হয়েছে।' };
+  }
+};
+
+// Find user for Password Reset by phone or email
+export const findUserForPasswordReset = async (
+  phoneOrEmail: string
+): Promise<{ success: boolean; user?: UserProfile; emailMasked?: string; error?: string }> => {
+  try {
+    const queryTerm = (phoneOrEmail || '').trim();
+    if (!queryTerm) {
+      return { success: false, error: 'ফোন নাম্বার বা ইমেইল টাইপ করুন (Please enter phone or email)' };
+    }
+
+    const normPhone = normalizePhone(queryTerm);
+    const cleanRaw = queryTerm.replace(/[\s-]/g, '');
+
+    let foundUser: UserProfile | null = null;
+
+    // 1. Try querying Firestore by phone (normalized or raw)
+    if (normPhone) {
+      const qNorm = query(collection(db, 'users'), where('phone', '==', normPhone));
+      const snapNorm = await getDocs(qNorm);
+      if (!snapNorm.empty) {
+        foundUser = snapNorm.docs[0].data() as UserProfile;
+      }
+    }
+
+    if (!foundUser && cleanRaw) {
+      const qRaw = query(collection(db, 'users'), where('phone', '==', cleanRaw));
+      const snapRaw = await getDocs(qRaw);
+      if (!snapRaw.empty) {
+        foundUser = snapRaw.docs[0].data() as UserProfile;
+      }
+    }
+
+    // 2. Try querying Firestore by email
+    if (!foundUser) {
+      const qEmail = query(collection(db, 'users'), where('email', '==', queryTerm.toLowerCase()));
+      const snapEmail = await getDocs(qEmail);
+      if (!snapEmail.empty) {
+        foundUser = snapEmail.docs[0].data() as UserProfile;
+      }
+    }
+
+    // 3. Fallback: Search all Firestore docs
+    if (!foundUser) {
+      try {
+        const allDocs = await getDocs(collection(db, 'users'));
+        allDocs.forEach((d) => {
+          const u = d.data() as UserProfile;
+          if (u) {
+            const uNorm = normalizePhone(u.phone || '');
+            const uEmail = (u.email || '').toLowerCase();
+            if (
+              (uNorm && uNorm === normPhone) ||
+              u.phone === cleanRaw ||
+              uEmail === queryTerm.toLowerCase()
+            ) {
+              foundUser = u;
+            }
+          }
+        });
+      } catch (e) {
+        console.warn('Search all docs error:', e);
+      }
+    }
+
+    // 4. Local fallback
+    if (!foundUser) {
+      const users = getUsers();
+      foundUser =
+        users.find((u) => {
+          const uNorm = normalizePhone(u.phone || '');
+          const uEmail = (u.email || '').toLowerCase();
+          return uNorm === normPhone || u.phone === cleanRaw || uEmail === queryTerm.toLowerCase();
+        }) || null;
+    }
+
+    if (!foundUser) {
+      return {
+        success: false,
+        error: 'এই তথ্য দিয়ে কোনো অ্যাকাউন্ট পাওয়া যায়নি (No account found matching this phone/email)',
+      };
+    }
+
+    // Mask email or phone for display
+    let masked = foundUser.email || foundUser.phone;
+    if (foundUser.email && foundUser.email.includes('@')) {
+      const [parts0, parts1] = foundUser.email.split('@');
+      const start = parts0.substring(0, 2);
+      masked = `${start}***@${parts1}`;
+    } else if (foundUser.phone) {
+      const len = foundUser.phone.length;
+      masked = foundUser.phone.substring(0, 3) + '****' + foundUser.phone.substring(len - 3);
+    }
+
+    return { success: true, user: foundUser, emailMasked: masked };
+  } catch (err: any) {
+    console.error('Find user for password reset error:', err);
+    return { success: false, error: err?.message || 'অ্যাকাউন্ট খুঁজতে ব্যর্থ হয়েছে।' };
+  }
+};
+
+// Reset User Password
+export const resetUserPassword = async (
+  uid: string,
+  newPassword: string
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    if (!newPassword || newPassword.length < 4) {
+      return { success: false, error: 'পাসওয়ার্ড অন্তত ৪ অক্ষরের হতে হবে (Password must be at least 4 characters)' };
+    }
+
+    // Update in Firestore
+    const userRef = doc(db, 'users', uid);
+    await updateDoc(userRef, { password: newPassword });
+
+    // Update local cache
+    const users = getUsers();
+    const idx = users.findIndex((u) => u.uid === uid);
+    if (idx >= 0) {
+      users[idx].password = newPassword;
+      saveUsersLocally(users);
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Reset password error:', err);
+    return { success: false, error: err?.message || 'পাসওয়ার্ড পরিবর্তন করা সম্ভব হয়নি।' };
   }
 };
 
