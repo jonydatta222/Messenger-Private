@@ -27,7 +27,8 @@ import {
   updateCallSignalStatus,
   subscribeToCallSignals,
   sendCallLogMessage,
-  normalizePhone
+  normalizePhone,
+  findUserByPhoneOrId
 } from './services/chatService';
 import { decryptMessage } from './services/encryptionService';
 import { UserProfile, CallState, Group, CallSignal, Message } from './types';
@@ -591,65 +592,64 @@ export default function App() {
   const handleAddContact = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddContactError(null);
-    const cleanPhone = newContactPhone.replace(/[\s-]/g, '').trim();
+    const cleanInput = newContactPhone.trim();
 
-    if (!cleanPhone) {
+    if (!cleanInput) {
       setAddContactError(
         lang === 'bn'
-          ? 'অনুগ্রহ করে একটি ফোন নাম্বার প্রদান করুন।'
-          : 'Please enter a phone number.'
+          ? 'অনুগ্রহ করে ফোন নাম্বার বা আইডি প্রদান করুন।'
+          : 'Please enter a phone number or ID.'
       );
       return;
     }
 
-    if (cleanPhone.length < 5) {
+    if (cleanInput.length < 3) {
       setAddContactError(
         lang === 'bn'
-          ? 'ফোন নাম্বারটি অন্তত ৫ সংখ্যার হতে হবে।'
-          : 'Phone number must be at least 5 digits.'
+          ? 'ফোন নাম্বার বা আইডি অন্তত ৩ অক্ষরের হতে হবে।'
+          : 'Phone number or ID must be at least 3 characters.'
       );
       return;
     }
 
     const currentPhoneNorm = normalizePhone(currentUser?.phone || '');
-    const searchNorm = normalizePhone(cleanPhone);
+    const currentUid = (currentUser?.uid || '').toLowerCase();
+    const searchNorm = normalizePhone(cleanInput);
 
-    if (currentPhoneNorm && currentPhoneNorm === searchNorm) {
+    if (
+      (currentUid && currentUid === cleanInput.toLowerCase()) ||
+      (currentPhoneNorm && searchNorm && currentPhoneNorm === searchNorm)
+    ) {
       setAddContactError(
         lang === 'bn'
-          ? 'আপনি আপনার নিজের ফোনে বার্তা পাঠাতে পারবেন না।'
-          : 'You cannot add your own phone number.'
+          ? 'আপনি আপনার নিজের আইডি বা ফোন নাম্বার যোগ করতে পারবেন না।'
+          : 'You cannot add your own ID or phone number.'
       );
       return;
     }
 
-    let loadedUsers = getUsers();
-    let existingUser = loadedUsers.find((u) => {
-      const uNorm = normalizePhone(u.phone || '');
-      return uNorm && (uNorm === searchNorm || uNorm.endsWith(searchNorm) || searchNorm.endsWith(uNorm));
-    });
+    try {
+      const existingUser = await findUserByPhoneOrId(cleanInput);
 
-    if (!existingUser) {
-      // Try pulling latest users from Firestore
-      await fetchAllFromFirestore();
-      loadedUsers = getUsers();
-      existingUser = loadedUsers.find((u) => {
-        const uNorm = normalizePhone(u.phone || '');
-        return uNorm && (uNorm === searchNorm || uNorm.endsWith(searchNorm) || searchNorm.endsWith(uNorm));
-      });
-    }
-
-    if (existingUser) {
-      setSelectedPartnerId(existingUser.uid);
-      setSelectedGroupId(null);
-      setNewContactPhone('');
-      setAddContactError(null);
-      setShowAddContactModal(false);
-    } else {
+      if (existingUser && existingUser.uid !== currentUser.uid) {
+        setUsers(getUsers());
+        setSelectedPartnerId(existingUser.uid);
+        setSelectedGroupId(null);
+        setNewContactPhone('');
+        setAddContactError(null);
+        setShowAddContactModal(false);
+      } else {
+        setAddContactError(
+          lang === 'bn'
+            ? 'এই ফোন নাম্বার বা আইডি দিয়ে কোনো অ্যাকাউন্ট পাওয়া যায়নি।'
+            : 'No account found with this phone number or ID.'
+        );
+      }
+    } catch {
       setAddContactError(
         lang === 'bn'
-          ? 'এই নাম্বারে কোনো আইডি খোলা নেই।'
-          : 'No account exists with this phone number.'
+          ? 'সার্চ করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।'
+          : 'Failed to search user. Please try again.'
       );
     }
   };
@@ -918,24 +918,24 @@ export default function App() {
 
             <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
               {lang === 'bn'
-                ? 'যার সাথে চ্যাট করতে চান তার ফোন নাম্বারটি নিচে প্রদান করুন:'
-                : 'Enter the phone number of the person you want to chat with:'}
+                ? 'যার সাথে চ্যাট করতে চান তার ফোন নাম্বার বা ইউজার আইডি প্রদান করুন:'
+                : 'Enter the phone number or User ID of the person you want to chat with:'}
             </p>
 
             <form onSubmit={handleAddContact} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
                   <Phone className="w-3.5 h-3.5 text-orange-500" />
-                  {lang === 'bn' ? 'ফোন নাম্বার' : 'Phone Number'}
+                  {lang === 'bn' ? 'ফোন নাম্বার বা আইডি' : 'Phone Number or User ID'}
                 </label>
                 <input
-                  type="tel"
+                  type="text"
                   value={newContactPhone}
                   onChange={(e) => {
                     setNewContactPhone(e.target.value);
                     if (addContactError) setAddContactError(null);
                   }}
-                  placeholder={lang === 'bn' ? 'যেমন: 01700000000' : 'e.g. 01700000000'}
+                  placeholder={lang === 'bn' ? 'যেমন: 01700000000 বা user_123...' : 'e.g. 01700000000 or user_123...'}
                   autoFocus
                   required
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-orange-500 font-mono tracking-wide"

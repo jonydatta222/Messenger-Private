@@ -121,12 +121,45 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
                 <div>
                   <h4 className="text-base font-bold text-slate-900 dark:text-slate-100">{currentUser.displayName}</h4>
-                  <p className="text-xs text-orange-600 dark:text-orange-400 font-mono mt-0.5 flex items-center justify-center gap-1 font-semibold">
-                    <Phone className="w-3.5 h-3.5" />
-                    {currentUser.phone}
-                  </p>
+                  <div className="flex items-center justify-center gap-2 mt-1">
+                    <p className="text-xs text-orange-600 dark:text-orange-400 font-mono flex items-center gap-1 font-semibold">
+                      <Phone className="w-3.5 h-3.5" />
+                      {currentUser.phone}
+                    </p>
+                    <button
+                      onClick={() => copyToClipboard(currentUser.phone, 'phone')}
+                      className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                      title="Copy Phone"
+                    >
+                      <Copy className="w-3 h-3" />
+                    </button>
+                  </div>
+                  {copiedKey === 'phone' && (
+                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                      {lang === 'bn' ? 'ফোন নাম্বার কপি হয়েছে!' : 'Phone number copied!'}
+                    </p>
+                  )}
+
+                  {/* User Unique ID */}
+                  <div className="mt-2 inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-xl text-[11px] text-slate-600 dark:text-slate-300 font-mono border border-slate-200 dark:border-slate-700">
+                    <span className="text-[10px] text-slate-400 font-sans font-bold">ID:</span>
+                    <span className="truncate max-w-[160px] font-semibold text-slate-800 dark:text-slate-200">{currentUser.uid}</span>
+                    <button
+                      onClick={() => copyToClipboard(currentUser.uid, 'uid')}
+                      className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                      title="Copy User ID"
+                    >
+                      <Copy className="w-3 h-3" />
+                    </button>
+                  </div>
+                  {copiedKey === 'uid' && (
+                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium mt-0.5">
+                      {lang === 'bn' ? 'ইউজার আইডি কপি হয়েছে!' : 'User ID copied!'}
+                    </p>
+                  )}
+
                   {currentUser.email && (
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center justify-center gap-1">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex items-center justify-center gap-1">
                       <Mail className="w-3 h-3 text-slate-400" />
                       {currentUser.email}
                     </p>

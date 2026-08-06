@@ -449,6 +449,143 @@ export const loginUser = async (
   }
 };
 
+// Search and find user by Phone Number, User ID (uid), Email, or Display Name across local storage & Firestore
+export const findUserByPhoneOrId = async (
+  searchTerm: string
+): Promise<UserProfile | null> => {
+  if (!searchTerm || !searchTerm.trim()) return null;
+
+  const cleanTerm = searchTerm.trim();
+  const lowerTerm = cleanTerm.toLowerCase();
+  const normPhone = normalizePhone(cleanTerm);
+  const digitsOnly = cleanTerm.replace(/\D/g, '');
+  const last10Digits = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : '';
+
+  const saveAndReturn = (user: UserProfile) => {
+    const localUsers = getUsers();
+    const idx = localUsers.findIndex((u) => u.uid === user.uid);
+    if (idx >= 0) {
+      localUsers[idx] = user;
+    } else {
+      localUsers.push(user);
+    }
+    saveUsersLocally(localUsers);
+    return user;
+  };
+
+  // 1. Check local cache first
+  const localUsers = getUsers();
+  const foundLocal = localUsers.find((u) => {
+    if (!u) return false;
+    const uUid = (u.uid || '').toLowerCase();
+    const uEmail = (u.email || '').toLowerCase();
+    const uPhoneNorm = normalizePhone(u.phone || '');
+    const uPhoneDigits = (u.phone || '').replace(/\D/g, '');
+    const uLast10 = uPhoneDigits.length >= 10 ? uPhoneDigits.slice(-10) : '';
+
+    if (uUid === lowerTerm || uEmail === lowerTerm) return true;
+    if (normPhone && uPhoneNorm === normPhone) return true;
+    if (last10Digits && uLast10 && last10Digits === uLast10) return true;
+    if (u.phone && (u.phone === cleanTerm || u.phone === digitsOnly)) return true;
+    return false;
+  });
+
+  if (foundLocal) return foundLocal;
+
+  // 2. Query Firestore directly
+  try {
+    // 2a. Query by exact UID
+    try {
+      const docRef = doc(db, 'users', cleanTerm);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const uData = docSnap.data() as UserProfile;
+        if (uData && uData.uid) {
+          return saveAndReturn(uData);
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // 2b. Query by normalized phone
+    if (normPhone) {
+      try {
+        const qPhone = query(collection(db, 'users'), where('phone', '==', normPhone));
+        const snapPhone = await getDocs(qPhone);
+        if (!snapPhone.empty) {
+          const uData = snapPhone.docs[0].data() as UserProfile;
+          return saveAndReturn(uData);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // 2c. Query by raw digits
+    if (digitsOnly && digitsOnly !== normPhone) {
+      try {
+        const qDigits = query(collection(db, 'users'), where('phone', '==', digitsOnly));
+        const snapDigits = await getDocs(qDigits);
+        if (!snapDigits.empty) {
+          const uData = snapDigits.docs[0].data() as UserProfile;
+          return saveAndReturn(uData);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // 2d. Query by email
+    try {
+      const qEmail = query(collection(db, 'users'), where('email', '==', lowerTerm));
+      const snapEmail = await getDocs(qEmail);
+      if (!snapEmail.empty) {
+        const uData = snapEmail.docs[0].data() as UserProfile;
+        return saveAndReturn(uData);
+      }
+    } catch {
+      // ignore
+    }
+
+    // 3. Complete scan of Firestore users collection
+    const allDocs = await getDocs(collection(db, 'users'));
+    let matchedUser: UserProfile | null = null;
+
+    allDocs.forEach((d) => {
+      if (matchedUser) return;
+      const u = d.data() as UserProfile;
+      if (!u) return;
+
+      const uUid = (u.uid || '').toLowerCase();
+      const uEmail = (u.email || '').toLowerCase();
+      const uDisplayName = (u.displayName || '').toLowerCase();
+      const uPhoneNorm = normalizePhone(u.phone || '');
+      const uPhoneDigits = (u.phone || '').replace(/\D/g, '');
+      const uLast10 = uPhoneDigits.length >= 10 ? uPhoneDigits.slice(-10) : '';
+
+      if (
+        uUid === lowerTerm ||
+        uEmail === lowerTerm ||
+        (normPhone && uPhoneNorm === normPhone) ||
+        (last10Digits && uLast10 && last10Digits === uLast10) ||
+        (u.phone && (u.phone === cleanTerm || u.phone === digitsOnly)) ||
+        (lowerTerm.length >= 3 && uDisplayName === lowerTerm)
+      ) {
+        matchedUser = u;
+      }
+    });
+
+    if (matchedUser) {
+      return saveAndReturn(matchedUser);
+    }
+  } catch (err) {
+    console.error('Error finding user in Firestore:', err);
+  }
+
+  return null;
+};
+
 // Find user for Password Reset by phone or email
 export const findUserForPasswordReset = async (
   phoneOrEmail: string

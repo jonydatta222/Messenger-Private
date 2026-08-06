@@ -182,10 +182,13 @@ export const ChatList: React.FC<ChatListProps> = ({
 
       displayUsers = otherUsers.filter((u) => {
         const uPhoneClean = (u.phone || '').replace(/[\s-]/g, '');
+        const uPhoneDigits = (u.phone || '').replace(/\D/g, '');
+        const uUid = (u.uid || '').toLowerCase();
         const nameMatch = (u.displayName || '').toLowerCase().includes(term);
-        const phoneMatch = termClean.length > 0 && uPhoneClean.includes(termClean);
+        const uidMatch = uUid.includes(term);
+        const phoneMatch = termClean.length > 0 && (uPhoneClean.includes(termClean) || uPhoneDigits.includes(termClean));
         const emailMatch = (u.email || '').toLowerCase().includes(term);
-        return nameMatch || phoneMatch || emailMatch;
+        return nameMatch || uidMatch || phoneMatch || emailMatch;
       });
     } else {
       displayUsers = myConversations;
