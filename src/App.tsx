@@ -47,15 +47,32 @@ export default function App() {
   const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
-  const [lang, setLang] = useState<'bn' | 'en'>('bn');
+  // Language State initialized from localStorage (defaulting to English 'en')
+  const [lang, setLang] = useState<'bn' | 'en'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('e2ee_messenger_lang');
+      if (saved === 'bn' || saved === 'en') return saved;
+    }
+    return 'en';
+  });
 
-  // Dark Mode State initialized from localStorage (defaulting to true/dark)
+  const handleToggleLang = () => {
+    setLang((prev) => {
+      const next = prev === 'bn' ? 'en' : 'bn';
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('e2ee_messenger_lang', next);
+      }
+      return next;
+    });
+  };
+
+  // Dark Mode State initialized from localStorage (defaulting to false / Light Mode)
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('e2ee_messenger_theme');
-      return saved ? saved === 'dark' : true;
+      return saved ? saved === 'dark' : false;
     }
-    return true;
+    return false;
   });
 
   // Apply 'dark' class to html root element
@@ -579,7 +596,7 @@ export default function App() {
       <AuthScreen
         onAuthSuccess={handleAuthSuccess}
         lang={lang}
-        onToggleLang={() => setLang(lang === 'bn' ? 'en' : 'bn')}
+        onToggleLang={handleToggleLang}
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode((prev) => !prev)}
       />
@@ -747,7 +764,7 @@ export default function App() {
         <Header
           currentUser={currentUser}
           lang={lang}
-          onToggleLang={() => setLang(lang === 'bn' ? 'en' : 'bn')}
+          onToggleLang={handleToggleLang}
           onOpenProfile={() => {
             setShowProfileModal(true);
             pushNavState('profile');

@@ -67,3 +67,36 @@ if (!manifestContent.includes('android:usesCleartextTraffic')) {
 
 fs.writeFileSync(manifestPath, manifestContent, 'utf8');
 console.log(`Successfully patched AndroidManifest.xml. Added ${addedCount} missing permissions/features.`);
+
+// Patch App Icons in Android project using logo.png
+const logoSource = ['public/logo.png', 'assets/logo.png', 'public/icon.png'].find(p => fs.existsSync(path.resolve(p)));
+if (logoSource) {
+  const resDir = path.resolve('android/app/src/main/res');
+  if (fs.existsSync(resDir)) {
+    console.log('Copying app logo icon to Android mipmap folders...');
+    const mipmapDirs = ['mipmap-mdpi', 'mipmap-hdpi', 'mipmap-xhdpi', 'mipmap-xxhdpi', 'mipmap-xxxhdpi'];
+    const iconNames = ['ic_launcher.png', 'ic_launcher_round.png', 'ic_launcher_foreground.png'];
+
+    mipmapDirs.forEach((dir) => {
+      const targetDir = path.join(resDir, dir);
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      iconNames.forEach((iconName) => {
+        fs.copyFileSync(path.resolve(logoSource), path.join(targetDir, iconName));
+      });
+    });
+    console.log('Successfully updated Android app icon in all mipmap directories with logo.png!');
+  }
+}
+
+// Patch App Name in Android strings.xml
+const stringsPath = path.resolve('android/app/src/main/res/values/strings.xml');
+if (fs.existsSync(stringsPath)) {
+  let stringsContent = fs.readFileSync(stringsPath, 'utf8');
+  stringsContent = stringsContent.replace(/<string name="app_name">[^<]*<\/string>/g, '<string name="app_name">Messenger+</string>');
+  stringsContent = stringsContent.replace(/<string name="title_activity_main">[^<]*<\/string>/g, '<string name="title_activity_main">Messenger+</string>');
+  fs.writeFileSync(stringsPath, stringsContent, 'utf8');
+  console.log('Successfully updated app_name in strings.xml to Messenger+');
+}
+

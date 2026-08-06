@@ -1,6 +1,6 @@
 {
   "appId": "com.secure.messenger",
-  "appName": "Secure Messenger",
+  "appName": "Messenger+",
   "webDir": "dist",
   "server": {
     "androidScheme": "https"

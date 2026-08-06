@@ -34,7 +34,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   onAuthSuccess,
   lang,
   onToggleLang,
-  darkMode = true,
+  darkMode = false,
   onToggleDarkMode,
 }) => {
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot_password'>('login');
@@ -209,11 +209,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       <div className="w-full max-w-md bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl dark:shadow-blue-500/5 backdrop-blur-xl relative z-10 space-y-6">
         {/* App Logo & Branding */}
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-3xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 shadow-xl shadow-blue-500/20 mb-1">
-            <Lock className="w-7 h-7 text-white" />
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl overflow-hidden shadow-xl shadow-blue-500/20 mb-1 border border-slate-200 dark:border-slate-800 bg-slate-900">
+            <img src="/logo.png" alt="Secure Messenger Logo" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            {lang === 'bn' ? 'সুরক্ষিত মেসেঞ্জার' : 'Secure E2EE Messenger'}
+            {lang === 'bn' ? 'মেসেঞ্জার+' : 'Messenger+'}
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
             {mode === 'forgot_password'

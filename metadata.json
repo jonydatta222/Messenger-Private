@@ -1,6 +1,6 @@
 {
-  "name": "Secure Messenger App",
-  "description": "End-to-End Encrypted Messenger app with TweetNaCl encryption, direct chat, image & voice sharing, and floating chat head mode.",
+  "name": "Messenger+",
+  "description": "Messenger+ End-to-End Encrypted Messenger app with TweetNaCl encryption, direct chat, image & voice sharing, and floating chat head mode.",
   "requestFramePermissions": ["camera", "microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
