@@ -1431,8 +1431,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         </div>
       )}
 
-      {/* Input Bottom Action Bar */}
-      <div className="p-2 bg-white dark:bg-slate-900 border-t border-slate-200/90 dark:border-slate-800 shadow-md z-20">
+      {/* Input Bottom Action Bar - Wide Input with Compact Icons */}
+      <div className="p-2 sm:p-3 bg-white dark:bg-slate-900 border-t border-slate-200/90 dark:border-slate-800 shadow-xl z-20">
         {showVoiceRecorder ? (
           <VoiceRecorder
             onSendVoice={handleSendVoice}
@@ -1441,12 +1441,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           />
         ) : (
           <form onSubmit={handleSendText} className="flex items-center gap-1.5">
-            {/* Attachment buttons */}
-            <div className="flex items-center gap-0.5 text-orange-500">
+            {/* Attachment buttons - Compact */}
+            <div className="flex items-center gap-0.5 text-orange-500 shrink-0">
               <button
                 type="button"
                 onClick={() => setInspectCiphertext(!inspectCiphertext)}
-                className="p-1.5 text-white bg-orange-500 rounded-full hover:bg-orange-600 transition-colors cursor-pointer shadow-xs"
+                className="p-1.5 text-white bg-orange-500 hover:bg-orange-600 rounded-xl transition-transform active:scale-95 cursor-pointer shadow-xs"
                 title={inspectCiphertext ? 'Show Decrypted' : 'Inspect Ciphertext'}
               >
                 <Plus className="w-4 h-4" />
@@ -1455,14 +1455,14 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               <button
                 type="button"
                 onClick={() => setShowCameraModal(true)}
-                className="p-1.5 text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
+                className="p-1.5 text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
                 title={lang === 'bn' ? 'ছবি তুলুন' : 'Take Photo'}
               >
-                <Camera className="w-5 h-5 text-orange-500" />
+                <Camera className="w-4.5 h-4.5 text-orange-500" />
               </button>
 
-              <label className="p-1.5 text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer">
-                <ImageIcon className="w-5 h-5 text-orange-500" />
+              <label className="p-1.5 text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer">
+                <ImageIcon className="w-4.5 h-4.5 text-orange-500" />
                 <input
                   type="file"
                   accept="image/*"
@@ -1474,15 +1474,15 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               <button
                 type="button"
                 onClick={() => setShowVoiceRecorder(true)}
-                className="p-1.5 text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
+                className="p-1.5 text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
                 title={lang === 'bn' ? 'ভয়েস রেকর্ড' : 'Voice Record'}
               >
-                <Mic className="w-5 h-5 text-orange-500" />
+                <Mic className="w-4.5 h-4.5 text-orange-500" />
               </button>
             </div>
 
-            {/* Input field capsule */}
-            <div className="flex-1 bg-slate-100 dark:bg-slate-800/80 border border-slate-200/90 dark:border-slate-700 focus-within:border-orange-500 rounded-full px-4 py-1.5 flex items-center justify-between gap-2">
+            {/* Input field capsule - Wide & Spacious */}
+            <div className="flex-1 bg-slate-100 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 focus-within:border-orange-500 focus-within:ring-2 focus-within:ring-orange-500/20 rounded-2xl px-3.5 py-2 flex items-center justify-between gap-2 shadow-inner transition-all">
               <input
                 ref={inputRef}
                 type="text"
@@ -1498,13 +1498,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                     }, 2500);
                   }
                 }}
-                placeholder={lang === 'bn' ? 'মেসেজ...' : 'Message'}
-                className="w-full bg-transparent text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none text-xs"
+                placeholder={lang === 'bn' ? 'মেসেজ লিখুন...' : 'Type a message...'}
+                className="w-full bg-transparent text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none text-sm font-medium"
               />
               <button
                 type="button"
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                className="text-orange-500 hover:opacity-80 transition-opacity cursor-pointer"
+                className="text-orange-500 hover:opacity-80 transition-opacity cursor-pointer shrink-0 p-0.5"
               >
                 <Smile className="w-5 h-5" />
               </button>
@@ -1514,19 +1514,19 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             {inputText.trim() ? (
               <button
                 type="submit"
-                className="p-1.5 text-orange-500 hover:scale-110 transition-transform cursor-pointer"
+                className="w-9 h-9 sm:w-10 sm:h-10 bg-orange-500 hover:bg-orange-600 text-white rounded-xl flex items-center justify-center transition-all active:scale-95 shadow-md shadow-orange-500/30 cursor-pointer shrink-0"
                 title={lang === 'bn' ? 'পাঠান' : 'Send'}
               >
-                <Send className="w-5 h-5 text-orange-500 fill-orange-500" />
+                <Send className="w-4.5 h-4.5 text-white fill-white ml-0.5" />
               </button>
             ) : (
               <button
                 type="button"
                 onClick={handleSendThumbsUp}
-                className="p-1.5 text-orange-500 hover:scale-110 transition-transform cursor-pointer"
+                className="p-1.5 text-orange-500 hover:scale-110 transition-transform cursor-pointer shrink-0"
                 title={lang === 'bn' ? 'লাইক দিন' : 'Send Thumbs Up'}
               >
-                <ThumbsUp className="w-6 h-6 text-orange-500 fill-orange-500" />
+                <ThumbsUp className="w-5.5 h-5.5 text-orange-500 fill-orange-500" />
               </button>
             )}
           </form>

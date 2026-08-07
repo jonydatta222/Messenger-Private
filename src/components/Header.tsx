@@ -12,7 +12,8 @@ import {
   X,
   Bell,
   VolumeX,
-  Volume2
+  Volume2,
+  Info
 } from 'lucide-react';
 import { UserProfile } from '../types';
 import { isAppSilentMode, setAppSilentMode } from '../services/notificationService';
@@ -30,6 +31,7 @@ interface HeaderProps {
   onOpenEncryptionInfo?: () => void;
   onOpenPermissionsGuide?: () => void;
   onTestNotificationReply?: () => void;
+  onOpenAbout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -45,6 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenEncryptionInfo,
   onOpenPermissionsGuide,
   onTestNotificationReply,
+  onOpenAbout,
 }) => {
   const [showSettings, setShowSettings] = useState(false);
   const [isSilent, setIsSilent] = useState<boolean>(() => isAppSilentMode());
@@ -306,6 +309,32 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-orange-500 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+              )}
+
+              {/* 5. About App Option */}
+              {onOpenAbout && (
+                <button
+                  onClick={() => {
+                    setShowSettings(false);
+                    onOpenAbout();
+                  }}
+                  className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 hover:bg-orange-50/50 dark:hover:bg-slate-800 border border-slate-100 dark:border-slate-800 transition-colors cursor-pointer text-left group"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-950/60 flex items-center justify-center shrink-0">
+                      <Info className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-xs text-slate-900 dark:text-slate-100 group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors">
+                        {lang === 'bn' ? 'অ্যাপস সম্পর্কে (About)' : 'About App'}
+                      </h4>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                        {lang === 'bn' ? 'ডেভেলপার তথ্য (জনি দত্ত)' : 'Developer Credit: Jony Datta'}
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-orange-500 transition-colors" />
                 </button>
               )}
             </div>

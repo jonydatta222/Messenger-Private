@@ -11,6 +11,7 @@ import { IncomingCallModal } from './components/IncomingCallModal';
 import { EncryptionInfoModal } from './components/EncryptionInfoModal';
 import { PermissionsGuideModal } from './components/PermissionsGuideModal';
 import { CreateGroupModal } from './components/CreateGroupModal';
+import { AboutModal } from './components/AboutModal';
 import { AuthScreen } from './components/AuthScreen';
 import { NotificationQuickReply } from './components/NotificationQuickReply';
 import { ChatHeadService } from './services/chatHeadService';
@@ -32,7 +33,8 @@ import {
   normalizePhone,
   findUserByPhoneOrId,
   updateUserPresence,
-  isUserOnline
+  isUserOnline,
+  processUnseenSmsNotifications
 } from './services/chatService';
 import { decryptMessage } from './services/encryptionService';
 import { UserProfile, CallState, Group, CallSignal, Message } from './types';
@@ -142,6 +144,7 @@ export default function App() {
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [showEncryptionInfoModal, setShowEncryptionInfoModal] = useState(false);
   const [showPermissionsGuideModal, setShowPermissionsGuideModal] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false);
   const [showLogoutConfirmModal, setShowLogoutConfirmModal] = useState(false);
   const [activeCall, setActiveCall] = useState<CallState | null>(null);
   const [incomingCall, setIncomingCall] = useState<CallSignal | null>(null);
@@ -286,6 +289,11 @@ export default function App() {
       return true;
     }
 
+    if (cur.showAboutModal) {
+      setShowAboutModal(false);
+      return true;
+    }
+
     if (cur.chatSubModalCloseRef.current) {
       const closed = cur.chatSubModalCloseRef.current();
       if (closed) return true;
@@ -348,75 +356,10 @@ export default function App() {
   const [newContactPhone, setNewContactPhone] = useState('');
   const [addContactError, setAddContactError] = useState<string | null>(null);
 
-  // Track last known message ID to detect new incoming SMS
-  const lastKnownMsgIdRef = useRef<string | null>(null);
-
   // Request browser notification permission if supported
   useEffect(() => {
     requestNotificationPermission().catch(() => {});
   }, []);
-
-  // Check for new incoming messages and trigger Phone System Notification & Chat Head
-  const checkNewIncomingMessages = (currUser: UserProfile, loadedUsers: UserProfile[]) => {
-    const allMsgs = getMessages();
-    const myIncomingMsgs = allMsgs.filter((m) => m.receiverId === currUser.uid && m.senderId !== currUser.uid);
-
-    if (myIncomingMsgs.length > 0) {
-      const latest = myIncomingMsgs[myIncomingMsgs.length - 1];
-
-      // Initializing on first run if null
-      if (!lastKnownMsgIdRef.current) {
-        lastKnownMsgIdRef.current = latest.id;
-        return;
-      }
-
-      if (latest.id !== lastKnownMsgIdRef.current) {
-        lastKnownMsgIdRef.current = latest.id;
-        const sender = loadedUsers.find((u) => u.uid === latest.senderId) || null;
-        const senderName = sender ? sender.displayName : 'Messenger';
-
-        // Decrypt actual SMS content for notification
-        let previewText = latest.text;
-        if (latest.type === 'image') {
-          previewText = lang === 'bn' ? '📷 [ছবি]' : '📷 [Photo]';
-        } else if (latest.type === 'voice') {
-          previewText = lang === 'bn' ? '🎤 [ভয়েস মেসেজ]' : '🎤 [Voice Message]';
-        } else if (latest.type === 'call') {
-          previewText = lang === 'bn' ? '📞 [কল]' : '📞 [Call]';
-        } else if (sender?.publicKey && currUser?.secretKey) {
-          previewText = decryptMessage(latest.text || '', sender.publicKey, currUser.secretKey);
-        }
-
-        // Play sound chime & vibrate
-        playNotificationChime();
-        triggerVibration([200, 100, 200]);
-
-        // Check if app is minimized / outside app
-        const isCurrentlyOutside = isOutsideApp || (typeof document !== 'undefined' && document.hidden);
-
-        if (isCurrentlyOutside) {
-          // MINIMIZED / OUTSIDE APP:
-          setIsFloatingHeadActive(true);
-          flashDocumentTitle(`💬 ${senderName}: ${previewText}`);
-
-          // Send Local & System Notification showing exact SMS text with Direct Reply Action
-          NotificationService.showSmsNotification(senderName, previewText || '', sender?.uid);
-          sendSystemNotification(
-            senderName,
-            previewText,
-            sender?.photoURL,
-            () => {
-              setSelectedPartnerId(sender?.uid || null);
-            }
-          );
-        } else {
-          // INSIDE APP:
-          // Show Local Notification channel alert without interrupting screen with popup
-          NotificationService.showSmsNotification(senderName, previewText || '', sender?.uid);
-        }
-      }
-    }
-  };
 
   // Direct Native Notification Shade Reply Handler
   useEffect(() => {
@@ -498,7 +441,7 @@ export default function App() {
       const myGrps = getGroupsForUser(currUser.uid);
       setGroups(myGrps);
 
-      checkNewIncomingMessages(currUser, loadedUsers);
+      processUnseenSmsNotifications();
 
       if (selectedPartnerId && !loadedUsers.some((u) => u.uid === selectedPartnerId)) {
         setSelectedPartnerId(null);
@@ -630,13 +573,6 @@ export default function App() {
   const handleAuthSuccess = (user: UserProfile) => {
     setSelectedPartnerId(null);
     setSelectedGroupId(null);
-    const allMsgs = getMessages();
-    const myIncomingMsgs = allMsgs.filter((m) => m.receiverId === user.uid && m.senderId !== user.uid);
-    if (myIncomingMsgs.length > 0) {
-      lastKnownMsgIdRef.current = myIncomingMsgs[myIncomingMsgs.length - 1].id;
-    } else {
-      lastKnownMsgIdRef.current = null;
-    }
     setCurrentUser(user);
     loadData();
   };

@@ -16,6 +16,32 @@ export const setAppSilentMode = (silent: boolean) => {
   window.dispatchEvent(new Event('e2ee_messenger_updated'));
 };
 
+// Persisted Notified Messages Tracker (prevents duplicate or repeated alerts for old SMS)
+export const getNotifiedMsgIds = (): Set<string> => {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem('e2ee_notified_msg_ids');
+    if (raw) return new Set(JSON.parse(raw));
+  } catch {}
+  return new Set();
+};
+
+export const isMsgNotified = (msgId: string): boolean => {
+  if (!msgId) return true;
+  return getNotifiedMsgIds().has(msgId);
+};
+
+export const markMsgAsNotified = (msgId: string) => {
+  if (typeof window === 'undefined' || !msgId) return;
+  const set = getNotifiedMsgIds();
+  set.add(msgId);
+  const arr = Array.from(set);
+  if (arr.length > 300) arr.splice(0, arr.length - 300);
+  try {
+    localStorage.setItem('e2ee_notified_msg_ids', JSON.stringify(arr));
+  } catch {}
+};
+
 // Capacitor Local Notifications Service Class
 export class NotificationService {
   
@@ -84,8 +110,13 @@ export class NotificationService {
     }
   }
 
-  // ৩. SMS আসার সাথে সাথে Local Notification পাঠানো (Direct Reply সহ)
-  public static async showSmsNotification(sender: string, messageBody: string, senderId?: string): Promise<void> {
+  // ৩. SMS আসার সাথে সাথে Local Notification পাঠানো (Direct Reply সহ, Grouping Support)
+  public static async showSmsNotification(
+    title: string,
+    messageBody: string,
+    senderId?: string,
+    notificationTag: string = 'sms_grouped_alerts'
+  ): Promise<void> {
     const hasPermission = await this.requestNotificationPermission();
     
     if (!hasPermission) {
@@ -96,8 +127,12 @@ export class NotificationService {
     // চ্যানেল তৈরি ও অ্যাকশন রেজিস্ট্রেশন নিশ্চিত করা
     await this.createNotificationChannel();
 
-    // ইউনিক আইডির জন্য ইউনিক সংখ্যা তৈরি
-    const notificationId = Math.floor(Math.random() * 100000);
+    // Stable numeric ID so Android local notification replaces existing active card instead of duplicating
+    const notificationId = senderId 
+      ? (Math.abs(senderId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % 80000) + 10000 
+      : 8888;
+
+    const displayTitle = title.startsWith('নতুন') || title.startsWith('মেসেঞ্জার') ? title : `নতুন SMS: ${title}`;
 
     let capacitorScheduled = false;
 
@@ -106,7 +141,7 @@ export class NotificationService {
         await LocalNotifications.schedule({
           notifications: [
             {
-              title: `নতুন SMS: ${sender}`,
+              title: displayTitle,
               body: messageBody,
               id: notificationId,
               channelId: 'sms_alerts', // তৈরি করা চ্যানেলের আইডি
@@ -116,7 +151,7 @@ export class NotificationService {
               extra: {
                 type: 'SMS_ALERT',
                 senderId: senderId || '',
-                senderName: sender,
+                senderName: title,
               }
             }
           ]
@@ -129,7 +164,7 @@ export class NotificationService {
 
     // Fallback to Web / System Notification if on browser or if Capacitor schedule failed
     if (!capacitorScheduled) {
-      await sendSystemNotification(`নতুন SMS: ${sender}`, messageBody);
+      await sendSystemNotification(displayTitle, messageBody, undefined, undefined, notificationTag);
     }
   }
 }
@@ -243,7 +278,8 @@ export const sendSystemNotification = async (
   title: string,
   body: string,
   iconUrl?: string,
-  onClick?: () => void
+  onClick?: () => void,
+  tag: string = 'sms_grouped_alerts'
 ) => {
   if (typeof window === 'undefined' || !('Notification' in window)) return;
 
@@ -256,7 +292,7 @@ export const sendSystemNotification = async (
     body,
     icon: iconUrl || '/icon.png',
     badge: '/icon.png',
-    tag: 'sms_notification_' + Date.now(),
+    tag, // Grouping tag so old active notification is updated instead of duplicated
     vibrate: [200, 100, 200],
     requireInteraction: true,
   };

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { User, Phone, Mail, Shield, KeyRound, Copy, Check, X, LogOut, Edit3, Save, Lock, Camera, Upload, Image as ImageIcon, RefreshCw, Sparkles, Crop } from 'lucide-react';
+import { User, Phone, Mail, Shield, KeyRound, Copy, Check, X, LogOut, Edit3, Save, Lock, Camera, Upload, Image as ImageIcon, RefreshCw, Sparkles, Crop, Info } from 'lucide-react';
 import { UserProfile } from '../types';
 import { updateUserProfile, isUserOnline } from '../services/chatService';
 import { processProfileImageFile, readFileAsDataUrl } from '../utils/imageUtils';
@@ -11,6 +11,7 @@ interface UserProfileModalProps {
   onClose: () => void;
   onLogout: () => void;
   onProfileUpdated?: (updated: UserProfile) => void;
+  onOpenAbout?: () => void;
   lang: 'bn' | 'en';
 }
 
@@ -19,6 +20,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   onClose,
   onLogout,
   onProfileUpdated,
+  onOpenAbout,
   lang,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
@@ -317,6 +319,34 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     </p>
                   )}
                 </div>
+
+                {/* About App / Developer Credit Button */}
+                {onOpenAbout && (
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onOpenAbout();
+                    }}
+                    className="w-full p-3 bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/5 hover:from-orange-500/20 hover:to-amber-500/20 border border-orange-500/30 rounded-2xl flex items-center justify-between text-left transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-orange-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                        <Info className="w-4.5 h-4.5" />
+                      </div>
+                      <div>
+                        <h5 className="font-bold text-xs text-orange-600 dark:text-orange-400">
+                          {lang === 'bn' ? 'অ্যাপস সম্পর্কে (About)' : 'About Application'}
+                        </h5>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                          {lang === 'bn' ? 'ডেভেলপার ক্রেডিট: জনি দত্ত (Jony Datta)' : 'App Credit: Jony Datta'}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-orange-500 group-hover:translate-x-0.5 transition-transform">
+                      →
+                    </span>
+                  </button>
+                )}
 
                 {/* Logout & Edit Buttons */}
                 <div className="pt-2 flex items-center gap-2">
