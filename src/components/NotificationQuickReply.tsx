@@ -179,6 +179,28 @@ export const NotificationQuickReply: React.FC<NotificationQuickReplyProps> = ({
           </div>
         </div>
 
+        {/* Quick Suggestion Chips */}
+        {!sentSuccess && (
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none mb-1">
+            {[
+              lang === 'bn' ? 'ঠিক আছে 👍' : 'Okay 👍',
+              lang === 'bn' ? 'ধন্যবাদ 🙏' : 'Thanks 🙏',
+              lang === 'bn' ? 'এখন ব্যস্ত আছি ⌛' : 'Busy right now ⌛',
+              lang === 'bn' ? 'পরে কথা বলছি 📞' : 'Talk later 📞',
+            ].map((chip, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleSendQuickReply(undefined, chip)}
+                disabled={sending}
+                className="px-2.5 py-1 bg-slate-100 hover:bg-orange-100 dark:bg-slate-800 dark:hover:bg-orange-950/50 border border-slate-200 dark:border-slate-700/80 hover:border-orange-400 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:text-orange-600 dark:hover:text-orange-400 rounded-full transition-colors cursor-pointer shrink-0"
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Sent Success Toast Banner inside Notification */}
         {sentSuccess ? (
           <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-xs text-emerald-700 dark:text-emerald-300 flex items-center justify-center gap-2 animate-fadeIn font-semibold">
@@ -195,6 +217,7 @@ export const NotificationQuickReply: React.FC<NotificationQuickReplyProps> = ({
             <div className="relative flex-1">
               <input
                 type="text"
+                autoFocus
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
                 placeholder={
@@ -210,7 +233,7 @@ export const NotificationQuickReply: React.FC<NotificationQuickReplyProps> = ({
             <button
               type="submit"
               disabled={!replyText.trim() || sending}
-              className="px-3 py-2 bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 disabled:opacity-40 text-white rounded-2xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1 cursor-pointer shrink-0"
+              className="px-3.5 py-2 bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 disabled:opacity-40 text-white rounded-2xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1 cursor-pointer shrink-0"
             >
               {sending ? (
                 <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />

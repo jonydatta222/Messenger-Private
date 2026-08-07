@@ -1,5 +1,11 @@
 import { Message, UserProfile, Group, CallSignal } from '../types';
-import { generateKeyPair, encryptMessage } from './encryptionService';
+import { generateKeyPair, encryptMessage, decryptMessage } from './encryptionService';
+import {
+  NotificationService,
+  sendSystemNotification,
+  playNotificationChime,
+  triggerVibration,
+} from './notificationService';
 import { db } from '../firebase';
 import {
   collection,
@@ -147,6 +153,65 @@ const broadcastChange = () => {
   window.dispatchEvent(new CustomEvent('e2ee_messenger_updated'));
 };
 
+// Track processed message IDs to avoid duplicate alerts
+const processedNotificationMsgIds = new Set<string>();
+
+const handleInstantIncomingDocNotification = (msg: Message) => {
+  if (!msg || !msg.id || processedNotificationMsgIds.has(msg.id)) return;
+
+  const currentAuthUid = getAuthSession();
+  if (!currentAuthUid) return;
+
+  // Ignore my own sent messages
+  if (msg.senderId === currentAuthUid) return;
+
+  // Check if message is for me or my group
+  let isTargetForMe = msg.receiverId === currentAuthUid;
+  if (!isTargetForMe && msg.groupId) {
+    const myGroups = getGroups();
+    const grp = myGroups.find((g) => g.id === msg.groupId);
+    if (grp && (grp.members.includes(currentAuthUid) || grp.createdBy === currentAuthUid)) {
+      isTargetForMe = true;
+    }
+  }
+
+  if (!isTargetForMe) return;
+
+  // Verify message is recent (created within last 3 minutes)
+  const isRecent = Date.now() - (msg.timestamp || 0) < 180000;
+  if (!isRecent) return;
+
+  processedNotificationMsgIds.add(msg.id);
+
+  // Find sender profile & current user profile
+  const users = getUsers();
+  const sender = users.find((u) => u.uid === msg.senderId) || null;
+  const currentUser = users.find((u) => u.uid === currentAuthUid) || null;
+  const senderName = sender ? sender.displayName : 'SMS Messenger';
+
+  // Decrypt or compose preview text
+  let previewText = msg.text || '';
+  if (msg.type === 'image') {
+    previewText = '📷 [ছবি / Photo]';
+  } else if (msg.type === 'voice') {
+    previewText = '🎤 [ভয়েস মেসেজ / Voice Message]';
+  } else if (msg.type === 'call') {
+    previewText = '📞 [কল / Call]';
+  } else if (sender?.publicKey && currentUser?.secretKey && msg.text) {
+    previewText = decryptMessage(msg.text, sender.publicKey, currentUser.secretKey);
+  }
+
+  // Sound chime & vibration
+  playNotificationChime();
+  triggerVibration([200, 100, 200]);
+
+  // Capacitor Native & Local Notification with Direct Reply
+  NotificationService.showSmsNotification(senderName, previewText, sender?.uid || '');
+
+  // System & Web Worker Notification
+  sendSystemNotification(`নতুন SMS: ${senderName}`, previewText, sender?.photoURL);
+};
+
 // ==================== FIRESTORE REAL-TIME SYNC ENGINE ====================
 
 let isFirestoreInitialized = false;
@@ -182,10 +247,18 @@ export const initFirestoreSync = () => {
     }
   );
 
-  // Real-time listener for Messages collection
+  // Real-time listener for Messages collection (Instant Notification Trigger)
   onSnapshot(
     collection(db, 'messages'),
     (snapshot) => {
+      // Catch newly added documents in real-time
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          const msgData = change.doc.data() as Message;
+          handleInstantIncomingDocNotification(msgData);
+        }
+      });
+
       const remoteMsgs: Message[] = [];
       snapshot.forEach((docSnap) => {
         remoteMsgs.push(docSnap.data() as Message);

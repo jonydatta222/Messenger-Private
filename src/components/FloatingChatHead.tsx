@@ -4,6 +4,7 @@ import { UserProfile, Message } from '../types';
 import { getUnreadCount, sendTextMessage, subscribeToMessages, markMessagesAsRead, getConversationsForUser, isUserOnline } from '../services/chatService';
 import { decryptMessage } from '../services/encryptionService';
 import { playNotificationChime, triggerVibration } from '../services/notificationService';
+import { ChatHeadService } from '../services/chatHeadService';
 
 
 interface SwipeableChatHeadMessageProps {
@@ -226,6 +227,14 @@ export const FloatingChatHead: React.FC<FloatingChatHeadProps> = ({
   const headUserScrolledUpRef = useRef<boolean>(false);
   const prevHeadPartnerIdRef = useRef<string | null>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
+
+  // Start Chat Head Service on mount, hide on unmount
+  useEffect(() => {
+    ChatHeadService.startBubble();
+    return () => {
+      ChatHeadService.hideBubble();
+    };
+  }, []);
 
   const handleHeadScroll = () => {
     if (!headScrollContainerRef.current) return;

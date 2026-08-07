@@ -13,6 +13,7 @@ import { PermissionsGuideModal } from './components/PermissionsGuideModal';
 import { CreateGroupModal } from './components/CreateGroupModal';
 import { AuthScreen } from './components/AuthScreen';
 import { NotificationQuickReply } from './components/NotificationQuickReply';
+import { ChatHeadService } from './services/chatHeadService';
 import { 
   getUsers, 
   getCurrentUserProfile, 
@@ -23,6 +24,7 @@ import {
   getMessages,
   getGroupsForUser,
   fetchAllFromFirestore,
+  sendTextMessage,
   sendCallSignal,
   updateCallSignalStatus,
   subscribeToCallSignals,
@@ -110,12 +112,14 @@ export default function App() {
     const nextState = !isFloatingHeadActive;
     setIsFloatingHeadActive(nextState);
     if (nextState) {
+      ChatHeadService.startBubble();
       showToast(
         lang === 'bn'
           ? 'চ্যাট হেড অন করা হয়েছে (শুধুমাত্র অ্যাপস থেকে বাইরে গেলে দেখাবে)'
           : 'Chat Head enabled (shows only when outside the app)'
       );
     } else {
+      ChatHeadService.hideBubble();
       showToast(
         lang === 'bn'
           ? 'চ্যাট হেড বন্ধ করা হয়েছে'
@@ -126,6 +130,7 @@ export default function App() {
 
   const handleOpenFloatingHead = () => {
     setIsFloatingHeadActive(true);
+    ChatHeadService.startBubble();
     showToast(
       lang === 'bn'
         ? 'চ্যাট হেড অন করা রয়েছে। আপনি অ্যাপস থেকে বাইরে গেলে (মিনিমাইজ করলে) এটি ভেসে উঠবে।'
@@ -394,29 +399,57 @@ export default function App() {
           setIsFloatingHeadActive(true);
           flashDocumentTitle(`💬 ${senderName}: ${previewText}`);
 
-          setQuickReplyMsg(latest);
-          setQuickReplySender(sender);
-
-          // Send Local & System Notification showing exact SMS text
-          NotificationService.showSmsNotification(senderName, previewText || '');
+          // Send Local & System Notification showing exact SMS text with Direct Reply Action
+          NotificationService.showSmsNotification(senderName, previewText || '', sender?.uid);
           sendSystemNotification(
             senderName,
             previewText,
             sender?.photoURL,
             () => {
-              setQuickReplyMsg(latest);
-              setQuickReplySender(sender);
-              setIsFloatingHeadActive(true);
+              setSelectedPartnerId(sender?.uid || null);
             }
           );
         } else {
           // INSIDE APP:
-          // Also show Local Notification channel alert
-          NotificationService.showSmsNotification(senderName, previewText || '');
+          // Show Local Notification channel alert without interrupting screen with popup
+          NotificationService.showSmsNotification(senderName, previewText || '', sender?.uid);
         }
       }
     }
   };
+
+  // Direct Native Notification Shade Reply Handler
+  useEffect(() => {
+    const handleDirectNotificationReply = async (e: any) => {
+      if (e.detail && e.detail.senderId && e.detail.replyText && currentUser) {
+        const loadedUsers = getUsers();
+        const sender = loadedUsers.find((u) => u.uid === e.detail.senderId);
+        if (sender) {
+          try {
+            await sendTextMessage(
+              currentUser.uid,
+              sender.uid,
+              e.detail.replyText,
+              sender.publicKey,
+              currentUser.secretKey
+            );
+            playNotificationChime();
+            setToastMessage(
+              lang === 'bn' ? 'নোটিফিকেশন থেকে উত্তর পাঠানো হয়েছে!' : 'Reply sent from notification!'
+            );
+            setTimeout(() => setToastMessage(null), 3000);
+          } catch (err) {
+            console.error('Direct notification reply error:', err);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('e2ee_messenger_direct_notification_reply', handleDirectNotificationReply);
+    return () => {
+      window.removeEventListener('e2ee_messenger_direct_notification_reply', handleDirectNotificationReply);
+    };
+  }, [currentUser, lang]);
 
   // Demo Trigger to test Direct Notification Reply
   const triggerTestNotificationReply = () => {
@@ -514,10 +547,10 @@ export default function App() {
       });
     }
 
-    // Periodic Firestore Background Polling (keeps background syncing alive every 8s)
+    // Fast Firestore Background Syncing (keeps sync active every 1.5s)
     const backgroundSyncInterval = setInterval(() => {
       fetchAllFromFirestore();
-    }, 8000);
+    }, 1500);
 
     return () => {
       window.removeEventListener('e2ee_messenger_updated', handleUpdate);

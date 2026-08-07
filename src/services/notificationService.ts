@@ -48,7 +48,7 @@ export class NotificationService {
     return false;
   }
 
-  // ২. হাই-ইমপর্টেন্স নোটিফিকেশন চ্যানেল তৈরি করা (Android 8.0+ এর জন্য আবশ্যক)
+  // ২. হাই-ইমপর্টেন্স নোটিফিকেশন চ্যানেল ও অ্যাকশন টাইপ তৈরি করা (Android 8.0+ এর জন্য আবশ্যক)
   public static async createNotificationChannel(): Promise<void> {
     try {
       if (Capacitor.isNativePlatform()) {
@@ -61,14 +61,31 @@ export class NotificationService {
           visibility: 1,
           vibration: true
         });
+
+        // Register direct reply action type for notification shade
+        await LocalNotifications.registerActionTypes({
+          types: [
+            {
+              id: 'SMS_REPLY_ACTION',
+              actions: [
+                {
+                  id: 'quick_reply',
+                  title: 'রিপ্লাই দিন (Reply)',
+                  input: true,
+                  inputButtonTitle: 'পাঠান (Send)',
+                }
+              ]
+            }
+          ]
+        });
       }
     } catch (e) {
       console.warn('Capacitor createChannel error:', e);
     }
   }
 
-  // ৩. SMS আসার সাথে সাথে Local Notification পাঠানো
-  public static async showSmsNotification(sender: string, messageBody: string): Promise<void> {
+  // ৩. SMS আসার সাথে সাথে Local Notification পাঠানো (Direct Reply সহ)
+  public static async showSmsNotification(sender: string, messageBody: string, senderId?: string): Promise<void> {
     const hasPermission = await this.requestNotificationPermission();
     
     if (!hasPermission) {
@@ -76,7 +93,7 @@ export class NotificationService {
       return;
     }
 
-    // চ্যানেল তৈরি নিশ্চিত করা
+    // চ্যানেল তৈরি ও অ্যাকশন রেজিস্ট্রেশন নিশ্চিত করা
     await this.createNotificationChannel();
 
     // ইউনিক আইডির জন্য ইউনিক সংখ্যা তৈরি
@@ -93,11 +110,13 @@ export class NotificationService {
               body: messageBody,
               id: notificationId,
               channelId: 'sms_alerts', // তৈরি করা চ্যানেলের আইডি
-              schedule: { at: new Date(Date.now() + 100) }, // সাথে সাথে ট্র্রিগার হবে
+              schedule: { at: new Date(Date.now() + 50) }, // সাথে সাথে ট্র্রিগার হবে
               sound: undefined,
-              actionTypeId: '',
+              actionTypeId: 'SMS_REPLY_ACTION',
               extra: {
-                type: 'SMS_ALERT'
+                type: 'SMS_ALERT',
+                senderId: senderId || '',
+                senderName: sender,
               }
             }
           ]
@@ -112,6 +131,29 @@ export class NotificationService {
     if (!capacitorScheduled) {
       await sendSystemNotification(`নতুন SMS: ${sender}`, messageBody);
     }
+  }
+}
+
+// Global Capacitor Action Listener for native Notification Shade reply
+if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
+  try {
+    LocalNotifications.addListener('localNotificationActionPerformed', (notificationAction) => {
+      const extra = notificationAction.notification.extra;
+      const userReplyText = notificationAction.inputValue || '';
+
+      if (extra && extra.senderId && userReplyText.trim()) {
+        window.dispatchEvent(
+          new CustomEvent('e2ee_messenger_direct_notification_reply', {
+            detail: {
+              senderId: extra.senderId,
+              replyText: userReplyText.trim(),
+            },
+          })
+        );
+      }
+    });
+  } catch (err) {
+    console.warn('Error attaching LocalNotifications action listener:', err);
   }
 }
 
