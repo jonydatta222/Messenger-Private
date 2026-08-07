@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Send, Lock, Ban, MessageSquare, ChevronDown, Users, Trash2, CornerUpLeft, HelpCircle, ExternalLink, Layers, Settings, Bell, CheckCircle2 } from 'lucide-react';
 import { UserProfile, Message } from '../types';
-import { getUnreadCount, sendTextMessage, subscribeToMessages, markMessagesAsRead, getConversationsForUser } from '../services/chatService';
+import { getUnreadCount, sendTextMessage, subscribeToMessages, markMessagesAsRead, getConversationsForUser, isUserOnline } from '../services/chatService';
 import { decryptMessage } from '../services/encryptionService';
 import { playNotificationChime, triggerVibration } from '../services/notificationService';
 
@@ -222,7 +222,17 @@ export const FloatingChatHead: React.FC<FloatingChatHeadProps> = ({
   const [showSelectorDropdown, setShowSelectorDropdown] = useState(false);
   const [replyingToMessage, setReplyingToMessage] = useState<Message['replyTo'] | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const headScrollContainerRef = useRef<HTMLDivElement>(null);
+  const headUserScrolledUpRef = useRef<boolean>(false);
+  const prevHeadPartnerIdRef = useRef<string | null>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
+
+  const handleHeadScroll = () => {
+    if (!headScrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = headScrollContainerRef.current;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    headUserScrolledUpRef.current = distanceFromBottom > 80;
+  };
 
   // Dragging and positioning state
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
@@ -322,12 +332,23 @@ export const FloatingChatHead: React.FC<FloatingChatHeadProps> = ({
     };
   }, [currentUser?.uid, activePartner?.uid]);
 
-  // Auto scroll to bottom
+  // Auto scroll to bottom (only if user hasn't scrolled up or user sent a message)
   useEffect(() => {
-    if (isOpen && activePartner) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (activePartner?.uid !== prevHeadPartnerIdRef.current) {
+      prevHeadPartnerIdRef.current = activePartner?.uid || null;
+      headUserScrolledUpRef.current = false;
     }
-  }, [messages, isOpen, activePartner]);
+  }, [activePartner?.uid]);
+
+  useEffect(() => {
+    if (isOpen && activePartner && messages.length > 0) {
+      const lastMsg = messages[messages.length - 1];
+      const isMine = lastMsg && lastMsg.senderId === currentUser.uid;
+      if (isMine || !headUserScrolledUpRef.current) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  }, [messages, isOpen, activePartner, currentUser.uid]);
 
   // Pointer drag handlers (handles both mouse & touch smoothly without crash)
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -609,7 +630,7 @@ export const FloatingChatHead: React.FC<FloatingChatHeadProps> = ({
                     />
                     <span
                       className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full ring-2 ring-white dark:ring-slate-900 ${
-                        activePartner.status === 'online' ? 'bg-emerald-500' : 'bg-slate-400'
+                        isUserOnline(activePartner) ? 'bg-emerald-500' : 'bg-slate-400'
                       }`}
                     />
                   </div>
@@ -621,7 +642,7 @@ export const FloatingChatHead: React.FC<FloatingChatHeadProps> = ({
                     <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-none mt-0.5 flex items-center gap-1 font-medium">
                       <Lock className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
                       <span>
-                        {activePartner.status === 'online'
+                        {isUserOnline(activePartner)
                           ? lang === 'bn'
                             ? 'অনলাইন'
                             : 'Active now'
@@ -724,7 +745,11 @@ export const FloatingChatHead: React.FC<FloatingChatHeadProps> = ({
           ) : (
             <>
               {/* Messages Container */}
-              <div className="flex-1 p-3 overflow-y-auto bg-slate-50/60 dark:bg-slate-950/80 space-y-2.5 text-xs">
+              <div
+                ref={headScrollContainerRef}
+                onScroll={handleHeadScroll}
+                className="flex-1 p-3 overflow-y-auto bg-slate-50/60 dark:bg-slate-950/80 space-y-2.5 text-xs"
+              >
                 {messages.length === 0 ? (
                   <div className="h-full flex items-center justify-center text-center p-4">
                     <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">

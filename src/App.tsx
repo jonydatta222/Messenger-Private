@@ -28,7 +28,9 @@ import {
   subscribeToCallSignals,
   sendCallLogMessage,
   normalizePhone,
-  findUserByPhoneOrId
+  findUserByPhoneOrId,
+  updateUserPresence,
+  isUserOnline
 } from './services/chatService';
 import { decryptMessage } from './services/encryptionService';
 import { UserProfile, CallState, Group, CallSignal, Message } from './types';
@@ -38,7 +40,8 @@ import {
   triggerVibration, 
   flashDocumentTitle, 
   requestNotificationPermission,
-  sendSystemNotification 
+  sendSystemNotification,
+  NotificationService
 } from './services/notificationService';
 
 export default function App() {
@@ -394,7 +397,8 @@ export default function App() {
           setQuickReplyMsg(latest);
           setQuickReplySender(sender);
 
-          // Send Phone OS System Notification showing exact SMS text
+          // Send Local & System Notification showing exact SMS text
+          NotificationService.showSmsNotification(senderName, previewText || '');
           sendSystemNotification(
             senderName,
             previewText,
@@ -407,7 +411,8 @@ export default function App() {
           );
         } else {
           // INSIDE APP:
-          // Do NOT pop up intrusive quick reply overlay or system banner when active inside app
+          // Also show Local Notification channel alert
+          NotificationService.showSmsNotification(senderName, previewText || '');
         }
       }
     }
@@ -437,6 +442,7 @@ export default function App() {
     setQuickReplyMsg(dummyMsg);
     setQuickReplySender(partner);
 
+    NotificationService.showSmsNotification(partner.displayName, dummyMsg.text);
     sendSystemNotification(
       partner.displayName,
       dummyMsg.text,
@@ -523,6 +529,30 @@ export default function App() {
       clearInterval(backgroundSyncInterval);
     };
   }, [lang]);
+
+  // Active User Presence Heartbeat
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+
+    // Send pulse immediately
+    updateUserPresence(currentUser.uid, 'online').catch(() => {});
+
+    // Periodic heartbeat every 15 seconds
+    const presenceInterval = setInterval(() => {
+      updateUserPresence(currentUser.uid, 'online').catch(() => {});
+    }, 15000);
+
+    const handleBeforeUnload = () => {
+      updateUserPresence(currentUser.uid, 'offline').catch(() => {});
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      clearInterval(presenceInterval);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [currentUser?.uid]);
 
   // Subscribe to real-time call signals
   useEffect(() => {

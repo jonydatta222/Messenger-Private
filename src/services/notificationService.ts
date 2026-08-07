@@ -1,4 +1,6 @@
 // Notification, Sound, and Vibration Utility Service
+import { LocalNotifications, PermissionStatus } from '@capacitor/local-notifications';
+import { Capacitor } from '@capacitor/core';
 
 let audioCtx: AudioContext | null = null;
 
@@ -13,6 +15,110 @@ export const setAppSilentMode = (silent: boolean) => {
   localStorage.setItem('app_silent_mode', silent ? 'true' : 'false');
   window.dispatchEvent(new Event('e2ee_messenger_updated'));
 };
+
+// Capacitor Local Notifications Service Class
+export class NotificationService {
+  
+  // ১. পারমিশন চাওয়া ও চেক করা
+  public static async requestNotificationPermission(): Promise<boolean> {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const status: PermissionStatus = await LocalNotifications.checkPermissions();
+        if (status.display !== 'granted') {
+          const request = await LocalNotifications.requestPermissions();
+          return request.display === 'granted';
+        }
+        return true;
+      }
+    } catch (e) {
+      console.warn('Capacitor local notifications permission check error:', e);
+    }
+
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') return true;
+      if (Notification.permission !== 'denied') {
+        try {
+          const perm = await Notification.requestPermission();
+          return perm === 'granted';
+        } catch {
+          return false;
+        }
+      }
+    }
+    return false;
+  }
+
+  // ২. হাই-ইমপর্টেন্স নোটিফিকেশন চ্যানেল তৈরি করা (Android 8.0+ এর জন্য আবশ্যক)
+  public static async createNotificationChannel(): Promise<void> {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        await LocalNotifications.createChannel({
+          id: 'sms_alerts',
+          name: 'SMS Alerts',
+          description: 'New SMS notifications channel',
+          importance: 5, // 5 = High/Max Importance (স্ক্রিনে পপ-আপ ও সাউন্ড হবে)
+          sound: 'default',
+          visibility: 1,
+          vibration: true
+        });
+      }
+    } catch (e) {
+      console.warn('Capacitor createChannel error:', e);
+    }
+  }
+
+  // ৩. SMS আসার সাথে সাথে Local Notification পাঠানো
+  public static async showSmsNotification(sender: string, messageBody: string): Promise<void> {
+    const hasPermission = await this.requestNotificationPermission();
+    
+    if (!hasPermission) {
+      console.warn("Notification permission was denied.");
+      return;
+    }
+
+    // চ্যানেল তৈরি নিশ্চিত করা
+    await this.createNotificationChannel();
+
+    // ইউনিক আইডির জন্য ইউনিক সংখ্যা তৈরি
+    const notificationId = Math.floor(Math.random() * 100000);
+
+    let capacitorScheduled = false;
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              title: `নতুন SMS: ${sender}`,
+              body: messageBody,
+              id: notificationId,
+              channelId: 'sms_alerts', // তৈরি করা চ্যানেলের আইডি
+              schedule: { at: new Date(Date.now() + 100) }, // সাথে সাথে ট্র্রিগার হবে
+              sound: undefined,
+              actionTypeId: '',
+              extra: {
+                type: 'SMS_ALERT'
+              }
+            }
+          ]
+        });
+        capacitorScheduled = true;
+      } catch (err) {
+        console.warn("LocalNotifications schedule error, falling back to Web Notification:", err);
+      }
+    }
+
+    // Fallback to Web / System Notification if on browser or if Capacitor schedule failed
+    if (!capacitorScheduled) {
+      await sendSystemNotification(`নতুন SMS: ${sender}`, messageBody);
+    }
+  }
+}
+
+// Helper function: SMS পাওয়ার পর নোটিফিকেশন ট্রিগার করা
+export async function onSmsReceived(senderNumber: string, smsText: string) {
+  await NotificationService.showSmsNotification(senderNumber, smsText);
+}
 
 // Synthesize pleasant double-chime notification sound using Web Audio API
 export const playNotificationChime = () => {

@@ -290,7 +290,8 @@ export const signUpUser = async (
   phone: string,
   password: string,
   displayName: string,
-  email?: string
+  email?: string,
+  photoURL?: string
 ): Promise<{ success: boolean; user?: UserProfile; error?: string }> => {
   try {
     const rawCleanPhone = (phone || '').replace(/[\s-]/g, '').trim();
@@ -336,11 +337,12 @@ export const signUpUser = async (
       password,
       displayName: displayName.trim(),
       email: email?.trim() || `${normPhone}@messenger.app`,
-      photoURL: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(displayName.trim())}`,
+      photoURL: photoURL?.trim() || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(displayName.trim())}`,
       publicKey: keys.publicKey,
       secretKey: keys.secretKey,
       createdAt: Date.now(),
       status: 'online',
+      lastSeen: Date.now(),
       bio: '🔐 E2EE Secured Messenger User',
     };
 
@@ -426,6 +428,8 @@ export const loginUser = async (
 
     // Ensure user phone in object is normalized
     targetUser.phone = normPhone || targetUser.phone;
+    targetUser.status = 'online';
+    targetUser.lastSeen = Date.now();
 
     // Save user locally & sync full history from Firestore BEFORE returning
     const localUsers = getUsers();
@@ -438,6 +442,7 @@ export const loginUser = async (
     saveUsersLocally(localUsers);
 
     setAuthSession(targetUser.uid);
+    updateUserPresence(targetUser.uid, 'online').catch(() => {});
 
     // Trigger full Firestore sync so all past messages and groups are pulled in immediately
     await fetchAllFromFirestore();
@@ -715,8 +720,72 @@ export const resetUserPassword = async (
   }
 };
 
+// Helper to check if a user is currently online (heartbeat within last 45s)
+export const isUserOnline = (user: UserProfile | null | undefined): boolean => {
+  if (!user) return false;
+  if (user.status !== 'online') return false;
+  if (!user.lastSeen) {
+    return user.status === 'online';
+  }
+  const diff = Date.now() - user.lastSeen;
+  return diff < 45000;
+};
+
+// Helper to format lastSeen time string for offline users
+export const formatLastSeenText = (lastSeen?: number, lang: 'bn' | 'en' = 'en'): string => {
+  if (!lastSeen) return lang === 'bn' ? 'অফলাইন' : 'Offline';
+  const diffMs = Date.now() - lastSeen;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMins < 1) {
+    return lang === 'bn' ? 'এইমাত্র অফলাইন' : 'Just now';
+  } else if (diffMins < 60) {
+    return lang === 'bn' ? `${diffMins} মিনিট আগে` : `${diffMins}m ago`;
+  } else if (diffHours < 24) {
+    return lang === 'bn' ? `${diffHours} ঘণ্টা আগে` : `${diffHours}h ago`;
+  } else {
+    return lang === 'bn' ? `${diffDays} দিন আগে` : `${diffDays}d ago`;
+  }
+};
+
+// Send active user presence heartbeat to Firestore & local state
+export const updateUserPresence = async (uid: string, status: 'online' | 'offline' | 'away' = 'online') => {
+  if (!uid) return;
+  const now = Date.now();
+
+  // Update local cache
+  const localUsers = getUsers();
+  const idx = localUsers.findIndex((u) => u.uid === uid);
+  if (idx !== -1) {
+    localUsers[idx].status = status;
+    localUsers[idx].lastSeen = now;
+    saveUsersLocally(localUsers);
+  }
+
+  // Update Firestore user doc
+  try {
+    const userRef = doc(db, 'users', uid);
+    await updateDoc(userRef, {
+      status,
+      lastSeen: now,
+    });
+  } catch (err) {
+    try {
+      await setDoc(doc(db, 'users', uid), { status, lastSeen: now }, { merge: true });
+    } catch (e) {
+      // ignore
+    }
+  }
+};
+
 // Logout
 export const logoutUser = () => {
+  const uid = getCurrentUserId();
+  if (uid) {
+    updateUserPresence(uid, 'offline').catch(() => {});
+  }
   setAuthSession(null);
 };
 

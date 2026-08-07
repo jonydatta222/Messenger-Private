@@ -68,26 +68,16 @@ if (!manifestContent.includes('android:usesCleartextTraffic')) {
 fs.writeFileSync(manifestPath, manifestContent, 'utf8');
 console.log(`Successfully patched AndroidManifest.xml. Added ${addedCount} missing permissions/features.`);
 
-// Patch App Icons in Android project using logo.png
-const logoSource = ['public/logo.png', 'assets/logo.png', 'public/icon.png'].find(p => fs.existsSync(path.resolve(p)));
-if (logoSource) {
-  const resDir = path.resolve('android/app/src/main/res');
-  if (fs.existsSync(resDir)) {
-    console.log('Copying app logo icon to Android mipmap folders...');
-    const mipmapDirs = ['mipmap-mdpi', 'mipmap-hdpi', 'mipmap-xhdpi', 'mipmap-xxhdpi', 'mipmap-xxxhdpi'];
-    const iconNames = ['ic_launcher.png', 'ic_launcher_round.png', 'ic_launcher_foreground.png'];
-
-    mipmapDirs.forEach((dir) => {
-      const targetDir = path.join(resDir, dir);
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
-      iconNames.forEach((iconName) => {
-        fs.copyFileSync(path.resolve(logoSource), path.join(targetDir, iconName));
-      });
+// Trigger generate-assets.js to properly format adaptive icons and mipmap resources
+try {
+  const genAssetsScript = path.resolve('scripts/generate-assets.js');
+  if (fs.existsSync(genAssetsScript)) {
+    import('./generate-assets.js').catch(err => {
+      console.warn('Could not run generate-assets.js automatically:', err);
     });
-    console.log('Successfully updated Android app icon in all mipmap directories with logo.png!');
   }
+} catch (e) {
+  console.warn('Error running generate-assets.js:', e);
 }
 
 // Patch App Name in Android strings.xml

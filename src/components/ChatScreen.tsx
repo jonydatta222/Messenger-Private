@@ -31,7 +31,11 @@ import {
   User,
   Users,
   Ban,
-  CornerUpLeft
+  CornerUpLeft,
+  ChevronDown,
+  CheckSquare,
+  Square,
+  CheckCircle2
 } from 'lucide-react';
 import { UserProfile, Message, Group } from '../types';
 import { 
@@ -52,7 +56,9 @@ import {
   sendGroupVoiceMessage,
   deleteGroup,
   setTypingStatus,
-  subscribeToTypingStatus
+  subscribeToTypingStatus,
+  isUserOnline,
+  formatLastSeenText
 } from '../services/chatService';
 import { decryptMessage } from '../services/encryptionService';
 import { VoiceRecorder } from './VoiceRecorder';
@@ -77,6 +83,9 @@ interface SwipeableMessageRowProps {
   setShowDeleteModal: (show: boolean) => void;
   highlightedMessageId: string | null;
   onScrollToMessage: (id: string) => void;
+  isSelectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
 const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
@@ -98,6 +107,9 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
   setShowDeleteModal,
   highlightedMessageId,
   onScrollToMessage,
+  isSelectionMode = false,
+  isSelected = false,
+  onToggleSelect,
 }) => {
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
@@ -107,6 +119,10 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
 
   // Touch Handlers for swipe right gesture
   const handleTouchStart = (e: React.TouchEvent) => {
+    if (isSelectionMode) {
+      if (onToggleSelect) onToggleSelect(item.id);
+      return;
+    }
     touchStartXRef.current = e.touches[0].clientX;
     touchStartYRef.current = e.touches[0].clientY;
     isDraggingRef.current = true;
@@ -114,7 +130,7 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDraggingRef.current) return;
+    if (isSelectionMode || !isDraggingRef.current) return;
     const currentX = e.touches[0].clientX;
     const currentY = e.touches[0].clientY;
     const deltaX = currentX - touchStartXRef.current;
@@ -130,6 +146,7 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
   };
 
   const handleTouchEnd = () => {
+    if (isSelectionMode) return;
     cancelLongPress();
     if (isDraggingRef.current) {
       if (swipeOffset >= 22) {
@@ -149,13 +166,17 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
   const isMouseDownRef = useRef<boolean>(false);
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (isSelectionMode) {
+      if (onToggleSelect) onToggleSelect(item.id);
+      return;
+    }
     mouseDownXRef.current = e.clientX;
     isMouseDownRef.current = true;
     startLongPress(item);
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isMouseDownRef.current) return;
+    if (isSelectionMode || !isMouseDownRef.current) return;
     const deltaX = e.clientX - mouseDownXRef.current;
     if (deltaX > 2) {
       cancelLongPress();
@@ -166,6 +187,7 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
   };
 
   const handleMouseUp = () => {
+    if (isSelectionMode) return;
     cancelLongPress();
     if (isMouseDownRef.current) {
       if (swipeOffset >= 22) {
@@ -326,12 +348,12 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
   return (
     <div
       id={`message-${item.id}`}
-      className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group relative my-1 transition-all duration-300 rounded-2xl p-0.5 ${
+      className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group relative my-0.5 transition-all duration-300 rounded-2xl p-0.5 ${
         isHighlighted ? 'bg-blue-500/30 ring-2 ring-blue-400' : ''
       }`}
     >
       {!isMe && group && (
-        <div className="flex items-center gap-1.5 mb-1 ml-1">
+        <div className="flex items-center gap-1.5 mb-1 ml-8">
           <img
             src={sender?.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
             alt={sender?.displayName || 'Member'}
@@ -344,7 +366,48 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
       )}
 
       {/* Swipe wrapper container */}
-      <div className="relative w-full flex items-center select-none overflow-visible">
+      <div
+        onClick={() => {
+          if (isSelectionMode && onToggleSelect) {
+            onToggleSelect(item.id);
+          }
+        }}
+        className={`relative w-full flex items-end gap-1.5 select-none overflow-visible ${isMe ? 'justify-end' : 'justify-start'}`}
+      >
+        {/* Selection mode check circle */}
+        {isSelectionMode && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onToggleSelect) onToggleSelect(item.id);
+            }}
+            className="shrink-0 p-1 rounded-full transition-transform active:scale-95 cursor-pointer self-center z-20"
+          >
+            {isSelected ? (
+              <CheckCircle2 className="w-5 h-5 text-orange-500 fill-orange-500/20" />
+            ) : (
+              <Square className="w-5 h-5 text-slate-400 dark:text-slate-600" />
+            )}
+          </button>
+        )}
+
+        {!isMe && (
+          <img
+            src={
+              sender?.photoURL ||
+              partner?.photoURL ||
+              'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+            }
+            alt={sender?.displayName || partner?.displayName || 'User'}
+            className="w-7 h-7 rounded-full object-cover shrink-0 mb-0.5 ring-1 ring-slate-300 dark:ring-slate-700 shadow-2xs cursor-pointer hover:opacity-90"
+            onClick={(e) => {
+              if (isSelectionMode) return;
+              if (partner) setSelectedImagePreview(partner.photoURL || null);
+            }}
+          />
+        )}
+
         {/* Swipe Reveal Reply Icon (behind message) */}
         <div
           className={`absolute left-0 flex items-center justify-center transition-all duration-100 z-0 ${
@@ -365,7 +428,7 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
           </div>
         </div>
 
-        {/* Swipeable Message Bubble */}
+        {/* Swipeable Compact Pill Message Bubble */}
         <div
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
@@ -376,18 +439,24 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
           onMouseLeave={handleMouseUp}
           onContextMenu={(e) => {
             e.preventDefault();
-            setSelectedMessageForAction(item);
-            setIsEditingMessage(false);
-            setShowDeleteModal(true);
+            if (isSelectionMode) {
+              if (onToggleSelect) onToggleSelect(item.id);
+            } else {
+              setSelectedMessageForAction(item);
+              setIsEditingMessage(false);
+              setShowDeleteModal(true);
+            }
           }}
           style={{
             transform: `translateX(${swipeOffset}px)`,
             transition: isSwiping ? 'none' : 'transform 0.25s cubic-bezier(0.18, 0.89, 0.32, 1.28)',
           }}
-          className={`max-w-[80%] sm:max-w-[72%] rounded-[22px] px-3.5 py-2.5 shadow-xs relative cursor-pointer select-none active:scale-[0.99] z-10 ${
+          className={`max-w-[78%] sm:max-w-[70%] w-fit rounded-[18px] px-3.5 py-1.5 shadow-2xs relative cursor-pointer select-none active:scale-[0.99] z-10 transition-all ${
+            isSelected ? 'ring-2 ring-orange-500 shadow-md shadow-orange-500/20' : ''
+          } ${
             isMe
-              ? 'bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 text-white rounded-br-[6px] shadow-md shadow-orange-500/20 ml-auto'
-              : 'bg-[#e5e7eb] dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-bl-[6px] border border-slate-300/60 dark:border-slate-700 shadow-2xs mr-auto'
+              ? 'bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 text-white rounded-br-[4px] shadow-sm shadow-orange-500/15 ml-auto'
+              : 'bg-[#e5e7eb] dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-bl-[4px] border border-slate-300/60 dark:border-slate-700 shadow-2xs mr-auto'
           }`}
         >
           {/* Quoted Reply inside message bubble */}
@@ -399,17 +468,17 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
                   onScrollToMessage(item.replyTo.id);
                 }
               }}
-              className={`mb-2 p-2 rounded-xl text-xs border-l-4 cursor-pointer transition-opacity hover:opacity-90 ${
+              className={`mb-1 p-1.5 rounded-lg text-xs border-l-3 cursor-pointer transition-opacity hover:opacity-90 ${
                 isMe
                   ? 'bg-black/20 text-amber-100 border-amber-300'
                   : 'bg-slate-300/80 dark:bg-slate-700/80 text-slate-900 dark:text-slate-100 border-orange-500'
               }`}
             >
-              <div className={`flex items-center gap-1 font-bold text-[11px] ${isMe ? 'text-amber-200' : 'text-orange-600 dark:text-orange-400'}`}>
-                <CornerUpLeft className="w-3 h-3 shrink-0" />
+              <div className={`flex items-center gap-1 font-bold text-[10px] ${isMe ? 'text-amber-200' : 'text-orange-600 dark:text-orange-400'}`}>
+                <CornerUpLeft className="w-2.5 h-2.5 shrink-0" />
                 <span className="truncate">{item.replyTo.senderName || (lang === 'bn' ? 'রিপ্লাই' : 'Reply')}</span>
               </div>
-              <p className="text-[10px] line-clamp-2 mt-0.5 opacity-90 italic">
+              <p className="text-[9.5px] line-clamp-1 mt-0.5 opacity-90 italic">
                 {item.replyTo.text || (lang === 'bn' ? 'মেসেজ' : 'Message')}
               </p>
             </div>
@@ -417,7 +486,7 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
 
           {/* Image Payload */}
           {item.imageUrl && (
-            <div className="mb-1 rounded-[16px] overflow-hidden cursor-pointer">
+            <div className="mb-1 rounded-[14px] overflow-hidden cursor-pointer">
               <img
                 src={item.imageUrl}
                 alt="Sent media"
@@ -425,54 +494,54 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
                   e.stopPropagation();
                   setSelectedImagePreview(item.imageUrl!);
                 }}
-                className="max-h-72 w-full object-cover rounded-[16px] hover:opacity-90 transition-opacity"
+                className="max-h-64 w-full object-cover rounded-[14px] hover:opacity-90 transition-opacity"
               />
             </div>
           )}
 
           {/* Audio Voice Note Payload */}
           {item.audioUrl && (
-            <div className={`flex items-center gap-2 p-2 rounded-xl my-1 border ${
+            <div className={`flex items-center gap-2 p-1.5 rounded-lg my-0.5 border ${
               isMe ? 'bg-black/20 border-white/20' : 'bg-slate-300/70 dark:bg-slate-700/70 border-slate-400/40 dark:border-slate-600/40'
             }`}>
-              <Volume2 className={`w-4 h-4 shrink-0 ${isMe ? 'text-amber-200' : 'text-orange-600 dark:text-orange-400'}`} />
-              <audio controls src={item.audioUrl} className="h-8 w-48 sm:w-56" />
+              <Volume2 className={`w-3.5 h-3.5 shrink-0 ${isMe ? 'text-amber-200' : 'text-orange-600 dark:text-orange-400'}`} />
+              <audio controls src={item.audioUrl} className="h-7 w-44 sm:w-52" />
             </div>
           )}
 
           {/* Text Payload */}
           {item.text && (
             <p
-              className={`text-[13px] leading-relaxed break-words font-sans ${
-                inspectCiphertext ? 'font-mono text-[10px] text-amber-200 bg-zinc-900 p-2 rounded-xl border border-amber-500/30' : ''
+              className={`text-[13px] leading-snug break-words font-sans ${
+                inspectCiphertext ? 'font-mono text-[10px] text-amber-200 bg-zinc-900 p-1.5 rounded-lg border border-amber-500/30' : ''
               }`}
             >
               {displayText}
               {item.isEdited && !inspectCiphertext && (
-                <span className={`text-[10px] italic ml-1.5 font-normal ${isMe ? 'text-orange-200' : 'text-slate-500 dark:text-slate-400'}`}>
+                <span className={`text-[9px] italic ml-1 font-normal ${isMe ? 'text-orange-200' : 'text-slate-500 dark:text-slate-400'}`}>
                   ({lang === 'bn' ? 'সম্পাদিত' : 'edited'})
                 </span>
               )}
             </p>
           )}
 
-          {/* Timestamp and Seen Status */}
+          {/* Timestamp and Seen Status inside compact bubble */}
           <div
-            className={`flex items-center justify-end gap-1.5 mt-1 text-[9px] ${
-              isMe ? 'text-orange-100/90' : 'text-slate-500 dark:text-slate-400'
+            className={`flex items-center justify-end gap-1 mt-0.5 text-[9px] leading-none ${
+              isMe ? 'text-orange-100/80' : 'text-slate-500 dark:text-slate-400'
             }`}
           >
             <span>{formatTime(item.timestamp)}</span>
             {isMe && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5">
                 {item.read && (
-                  <span className="text-[9px] font-extrabold text-sky-200 dark:text-sky-300 tracking-tight">
+                  <span className="text-[8.5px] font-bold text-sky-200 dark:text-sky-300 tracking-tight">
                     Seen
                   </span>
                 )}
                 <CheckCheck
-                  className={`w-3.5 h-3.5 ${
-                    item.read ? 'text-sky-300 dark:text-sky-300 fill-sky-300/30 ring-1 ring-sky-400/30 rounded-full' : 'text-orange-200/70'
+                  className={`w-3 h-3 ${
+                    item.read ? 'text-sky-300 dark:text-sky-300 fill-sky-300/30' : 'text-orange-200/70'
                   }`}
                 />
               </div>
@@ -483,14 +552,14 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
 
       {/* Read Avatar & Seen Text Indicator for sent message */}
       {isMe && item.read && partner && (
-        <div className="flex items-center justify-end gap-1 mt-1">
-          <span className="text-[9px] font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/80 px-1.5 py-0.2 rounded-full border border-sky-200 dark:border-sky-800 shadow-2xs">
+        <div className="flex items-center justify-end gap-1 mt-0.5">
+          <span className="text-[8.5px] font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/80 px-1 py-0.1 rounded-full border border-sky-200 dark:border-sky-800 shadow-2xs">
             {lang === 'bn' ? 'Seen (দেখা হয়েছে)' : 'Seen'}
           </span>
           <img
             src={partner.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
             alt="Seen"
-            className="w-3.5 h-3.5 rounded-full object-cover ring-2 ring-sky-500 shadow-xs"
+            className="w-3 h-3 rounded-full object-cover ring-1 ring-sky-500 shadow-xs"
           />
         </div>
       )}
@@ -540,7 +609,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [isPartnerTyping, setIsPartnerTyping] = useState(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Delete, Edit & Long Press states
+  // Delete, Edit, Selection & Long Press states
   const [selectedMessageForAction, setSelectedMessageForAction] = useState<Message | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showClearChatModal, setShowClearChatModal] = useState(false);
@@ -549,6 +618,43 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [isEditingMessage, setIsEditingMessage] = useState(false);
   const [editTextValue, setEditTextValue] = useState('');
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Multi-select message state
+  const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  const [showMultiDeleteModal, setShowMultiDeleteModal] = useState<boolean>(false);
+
+  const toggleMessageSelection = (msgId: string) => {
+    setSelectedMessageIds((prev) =>
+      prev.includes(msgId) ? prev.filter((id) => id !== msgId) : [...prev, msgId]
+    );
+  };
+
+  const handleSelectAllMessages = () => {
+    if (selectedMessageIds.length === messages.length) {
+      setSelectedMessageIds([]);
+    } else {
+      setSelectedMessageIds(messages.map((m) => m.id));
+    }
+  };
+
+  const handleMultiDeleteForMe = () => {
+    selectedMessageIds.forEach((id) => {
+      deleteForMe(id, currentUser.uid);
+    });
+    setSelectedMessageIds([]);
+    setIsSelectionMode(false);
+    setShowMultiDeleteModal(false);
+  };
+
+  const handleMultiDeleteForEveryone = () => {
+    selectedMessageIds.forEach((id) => {
+      deleteForEveryone(id);
+    });
+    setSelectedMessageIds([]);
+    setIsSelectionMode(false);
+    setShowMultiDeleteModal(false);
+  };
 
   // Sub-modal detection & history integration
   const isAnySubModalOpen = Boolean(
@@ -559,10 +665,21 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     showChatInfoModal ||
     showDeleteModal ||
     showClearChatModal ||
-    showEmojiPicker
+    showEmojiPicker ||
+    showMultiDeleteModal ||
+    isSelectionMode
   );
 
   const closeSubModal = (): boolean => {
+    if (showMultiDeleteModal) {
+      setShowMultiDeleteModal(false);
+      return true;
+    }
+    if (isSelectionMode) {
+      setIsSelectionMode(false);
+      setSelectedMessageIds([]);
+      return true;
+    }
     if (selectedImagePreview) {
       setSelectedImagePreview(null);
       return true;
@@ -752,6 +869,44 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   };
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const userScrolledUpRef = useRef<boolean>(false);
+  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState<boolean>(false);
+  const prevPartnerOrGroupIdRef = useRef<string | null>(null);
+  const prevMessagesLengthRef = useRef<number>(0);
+
+  const scrollToBottom = (smooth = true) => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
+    } else if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    }
+    userScrolledUpRef.current = false;
+    setShowScrollBottomBtn(false);
+  };
+
+  const handleScrollContainerScroll = () => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    const isUp = distanceFromBottom > 35;
+    userScrolledUpRef.current = isUp;
+    setShowScrollBottomBtn(isUp);
+  };
+
+  // Reset scroll position when switching active conversation
+  const currentChatId = partner?.uid || group?.id || null;
+  useEffect(() => {
+    if (currentChatId !== prevPartnerOrGroupIdRef.current) {
+      prevPartnerOrGroupIdRef.current = currentChatId;
+      userScrolledUpRef.current = false;
+      setShowScrollBottomBtn(false);
+      prevMessagesLengthRef.current = 0;
+      setTimeout(() => {
+        scrollToBottom(false);
+      }, 50);
+    }
+  }, [currentChatId]);
 
   // Subscribe to realtime messages for this chat partner or group
   useEffect(() => {
@@ -785,10 +940,29 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
   }, [currentUser.uid, partner?.uid]);
 
-  // Scroll to bottom on new message
+  // Auto scroll to bottom ONLY when opening chat or when a NEW message arrives and user is at bottom or sent it
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (messages.length === 0) return;
+
+    const prevCount = prevMessagesLengthRef.current;
+    prevMessagesLengthRef.current = messages.length;
+
+    // Initial load when opening chat:
+    if (prevCount === 0) {
+      scrollToBottom(false);
+      return;
+    }
+
+    // ONLY scroll when a NEW message was added to the list:
+    if (messages.length > prevCount) {
+      const lastMsg = messages[messages.length - 1];
+      const isLastMsgMine = lastMsg && lastMsg.senderId === currentUser.uid;
+
+      if (isLastMsgMine || !userScrolledUpRef.current) {
+        scrollToBottom(true);
+      }
+    }
+  }, [messages, currentUser.uid]);
 
   const handleSendText = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -891,130 +1065,193 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   return (
     <div className="flex-1 flex flex-col h-full bg-[#fafafa] dark:bg-slate-950 text-slate-900 dark:text-slate-100 relative overflow-hidden select-none transition-colors">
       {/* Active Partner Top App Bar */}
-      <div className="px-2 py-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/90 dark:border-slate-800 flex items-center justify-between shadow-2xs z-20">
-        <div className="flex items-center gap-1">
-          {/* Back Arrow for Fullscreen Navigation */}
-          <button
-            type="button"
-            onClick={() => {
-              if (isAnySubModalOpen) {
-                if (typeof window !== 'undefined' && window.history.state?.appNav) {
-                  window.history.back();
+      {isSelectionMode ? (
+        <div className="px-3 py-2.5 bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 text-white flex items-center justify-between shadow-md z-20 transition-all">
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                setIsSelectionMode(false);
+                setSelectedMessageIds([]);
+              }}
+              className="p-1.5 hover:bg-white/20 rounded-full transition-colors cursor-pointer"
+              title={lang === 'bn' ? 'বাতিল' : 'Cancel'}
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+            <span className="font-bold text-sm text-white tracking-tight">
+              {selectedMessageIds.length} {lang === 'bn' ? 'টি সিলেক্টড' : 'Selected'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSelectAllMessages}
+              className="px-2.5 py-1 text-xs font-semibold bg-white/20 hover:bg-white/30 rounded-lg transition-colors cursor-pointer text-white"
+            >
+              {selectedMessageIds.length === messages.length
+                ? (lang === 'bn' ? 'আনসিলেক্ট' : 'Deselect All')
+                : (lang === 'bn' ? 'সব সিলেক্ট' : 'Select All')}
+            </button>
+
+            <button
+              type="button"
+              disabled={selectedMessageIds.length === 0}
+              onClick={() => setShowMultiDeleteModal(true)}
+              className={`p-2 rounded-full transition-all cursor-pointer flex items-center justify-center ${
+                selectedMessageIds.length > 0
+                  ? 'bg-red-600 hover:bg-red-700 text-white shadow-md shadow-red-900/30'
+                  : 'bg-white/20 text-white/50 cursor-not-allowed'
+              }`}
+              title={lang === 'bn' ? 'সিলেক্টড মেসেজ ডিলেট' : 'Delete selected'}
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="px-2 py-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/90 dark:border-slate-800 flex items-center justify-between shadow-2xs z-20">
+          <div className="flex items-center gap-1">
+            {/* Back Arrow for Fullscreen Navigation */}
+            <button
+              type="button"
+              onClick={() => {
+                if (isAnySubModalOpen) {
+                  if (typeof window !== 'undefined' && window.history.state?.appNav) {
+                    window.history.back();
+                  } else {
+                    closeSubModal();
+                  }
                 } else {
-                  closeSubModal();
+                  if (typeof window !== 'undefined' && window.history.state?.appNav) {
+                    window.history.back();
+                  } else if (onBack) {
+                    onBack();
+                  }
                 }
-              } else {
-                if (typeof window !== 'undefined' && window.history.state?.appNav) {
-                  window.history.back();
-                } else if (onBack) {
-                  onBack();
-                }
-              }
-            }}
-            className="p-1.5 text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
-            title={lang === 'bn' ? 'ফিরে যান' : 'Back'}
-          >
-            <ArrowLeft className="w-6 h-6" />
-          </button>
-
-          {/* User Profile / Group Avatar */}
-          {partner ? (
-            <div
-              className="relative cursor-pointer flex items-center gap-2.5 ml-0.5"
-              onClick={() => setShowPartnerProfileModal(true)}
+              }}
+              className="p-1.5 text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
+              title={lang === 'bn' ? 'ফিরে যান' : 'Back'}
             >
-              <div className="relative">
-                <img
-                  src={partner.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
-                  alt={partner.displayName}
-                  className="w-9 h-9 rounded-full object-cover ring-2 ring-orange-200 dark:ring-slate-700"
-                />
-                {partner.status === 'online' && (
-                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900" />
-                )}
-              </div>
+              <ArrowLeft className="w-6 h-6" />
+            </button>
 
-              <div>
-                <h2 className="font-bold text-sm text-slate-900 dark:text-slate-100 tracking-tight leading-tight">
-                  {partner.displayName}
-                </h2>
-                {isPartnerTyping ? (
-                  <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 block -mt-0.5 animate-pulse flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" />
-                    {lang === 'bn' ? 'typing...' : 'typing...'}
-                  </span>
-                ) : (
-                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium block -mt-0.5">
-                    {partner.status === 'online'
-                      ? (lang === 'bn' ? 'সক্রিয় আছেন' : 'Active now')
-                      : (lang === 'bn' ? 'অফলাইন' : 'Active 3h ago')}
-                  </span>
-                )}
+            {/* User Profile / Group Avatar */}
+            {partner ? (
+              <div
+                className="relative cursor-pointer flex items-center gap-2.5 ml-0.5"
+                onClick={() => setShowPartnerProfileModal(true)}
+              >
+                <div className="relative">
+                  <img
+                    src={partner.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
+                    alt={partner.displayName}
+                    className="w-9 h-9 rounded-full object-cover ring-2 ring-orange-200 dark:ring-slate-700"
+                  />
+                  {isUserOnline(partner) && (
+                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900" />
+                  )}
+                </div>
+
+                <div>
+                  <h2 className="font-bold text-sm text-slate-900 dark:text-slate-100 tracking-tight leading-tight">
+                    {partner.displayName}
+                  </h2>
+                  {isPartnerTyping ? (
+                    <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 block -mt-0.5 animate-pulse flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" />
+                      {lang === 'bn' ? 'typing...' : 'typing...'}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium block -mt-0.5">
+                      {isUserOnline(partner)
+                        ? (lang === 'bn' ? 'সক্রিয় আছেন' : 'Active now')
+                        : (lang === 'bn' ? `অফলাইন (${formatLastSeenText(partner.lastSeen, 'bn')})` : `Offline (${formatLastSeenText(partner.lastSeen, 'en')})`)}
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          ) : group ? (
-            <div
-              className="relative cursor-pointer flex items-center gap-2.5 ml-0.5"
+            ) : group ? (
+              <div
+                className="relative cursor-pointer flex items-center gap-2.5 ml-0.5"
+                onClick={() => setShowChatInfoModal(true)}
+              >
+                <div className="relative">
+                  <img
+                    src={group.photoURL || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=150&auto=format&fit=crop&q=80'}
+                    alt={group.name}
+                    className="w-9 h-9 rounded-2xl object-cover ring-1 ring-slate-200 dark:ring-slate-700 bg-slate-100 dark:bg-slate-800 p-0.5"
+                  />
+                  <span className="absolute -bottom-1 -right-1 bg-orange-500 text-white text-[8px] font-bold px-1 rounded-full border border-white dark:border-slate-900">
+                    {group.members.length}
+                  </span>
+                </div>
+
+                <div>
+                  <h2 className="font-bold text-sm text-slate-900 dark:text-slate-100 tracking-tight leading-tight flex items-center gap-1.5">
+                    <span>{group.name}</span>
+                    <Users className="w-3.5 h-3.5 text-orange-500" />
+                  </h2>
+                  <span className="text-[10px] text-orange-600 dark:text-orange-400 font-medium block -mt-0.5">
+                    {group.members.length} {lang === 'bn' ? 'জন সদস্য' : 'members'}
+                  </span>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Action Controls Header */}
+          <div className="flex items-center gap-1 text-orange-500">
+            {partner && (
+              <>
+                <button
+                  onClick={() => onStartCall('audio')}
+                  className="p-2 text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
+                  title={lang === 'bn' ? 'অডিও কল' : 'Audio Call'}
+                >
+                  <Phone className="w-5 h-5 text-orange-500 fill-orange-500/10" />
+                </button>
+
+                <button
+                  onClick={() => onStartCall('video')}
+                  className="p-2 text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
+                  title={lang === 'bn' ? 'ভিডিও কল' : 'Video Call'}
+                >
+                  <Video className="w-5 h-5 text-orange-500 fill-orange-500/10" />
+                </button>
+              </>
+            )}
+
+            <button
+              onClick={() => {
+                setIsSelectionMode(true);
+                setSelectedMessageIds([]);
+              }}
+              className="p-2 text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
+              title={lang === 'bn' ? 'মেসেজ সিলেক্ট/ডিলেট' : 'Select messages'}
+            >
+              <CheckSquare className="w-5 h-5 text-orange-500" />
+            </button>
+
+            <button
               onClick={() => setShowChatInfoModal(true)}
+              className="p-2 text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
+              title={lang === 'bn' ? 'তথ্য' : 'Info'}
             >
-              <div className="relative">
-                <img
-                  src={group.photoURL || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=150&auto=format&fit=crop&q=80'}
-                  alt={group.name}
-                  className="w-9 h-9 rounded-2xl object-cover ring-1 ring-slate-200 dark:ring-slate-700 bg-slate-100 dark:bg-slate-800 p-0.5"
-                />
-                <span className="absolute -bottom-1 -right-1 bg-orange-500 text-white text-[8px] font-bold px-1 rounded-full border border-white dark:border-slate-900">
-                  {group.members.length}
-                </span>
-              </div>
-
-              <div>
-                <h2 className="font-bold text-sm text-slate-900 dark:text-slate-100 tracking-tight leading-tight flex items-center gap-1.5">
-                  <span>{group.name}</span>
-                  <Users className="w-3.5 h-3.5 text-orange-500" />
-                </h2>
-                <span className="text-[10px] text-orange-600 dark:text-orange-400 font-medium block -mt-0.5">
-                  {group.members.length} {lang === 'bn' ? 'জন সদস্য' : 'members'}
-                </span>
-              </div>
-            </div>
-          ) : null}
+              <Info className="w-5 h-5 text-orange-500" />
+            </button>
+          </div>
         </div>
-
-        {/* Action Controls Header */}
-        <div className="flex items-center gap-1 text-orange-500">
-          {partner && (
-            <>
-              <button
-                onClick={() => onStartCall('audio')}
-                className="p-2 text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
-                title={lang === 'bn' ? 'অডিও কল' : 'Audio Call'}
-              >
-                <Phone className="w-5 h-5 text-orange-500 fill-orange-500/10" />
-              </button>
-
-              <button
-                onClick={() => onStartCall('video')}
-                className="p-2 text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
-                title={lang === 'bn' ? 'ভিডিও কল' : 'Video Call'}
-              >
-                <Video className="w-5 h-5 text-orange-500 fill-orange-500/10" />
-              </button>
-            </>
-          )}
-
-          <button
-            onClick={() => setShowChatInfoModal(true)}
-            className="p-2 text-orange-500 hover:bg-orange-50 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
-            title={lang === 'bn' ? 'তথ্য' : 'Info'}
-          >
-            <Info className="w-5 h-5 text-orange-500" />
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Messages Scroll Area with Halloween Cobweb Background Pattern */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-3 bg-[#f8fafc] dark:bg-slate-950 text-slate-900 dark:text-slate-100 relative transition-colors">
+      <div className="relative flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScrollContainerScroll}
+          className="flex-1 overflow-y-auto px-3 py-4 space-y-3 bg-[#f8fafc] dark:bg-slate-950 text-slate-900 dark:text-slate-100 relative transition-colors"
+        >
         {/* Cobweb SVG Background Watermark */}
         <svg className="absolute inset-0 w-full h-full opacity-[0.12] dark:opacity-[0.04] pointer-events-none text-slate-400 dark:text-slate-600" viewBox="0 0 500 800" fill="none" stroke="currentColor" strokeWidth="1">
           <path d="M250 0 L250 800 M0 400 L500 400 M0 0 L500 800 M500 0 L0 800 M125 0 Q250 125 375 0 M125 800 Q250 675 375 800 M0 200 Q250 300 500 200 M0 600 Q250 500 500 600 M100 100 Q250 200 400 100 M100 700 Q250 600 400 700" />
@@ -1070,7 +1307,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         </div>
 
         {/* Message Stream */}
-        <div className="relative z-10 space-y-3">
+        <div className="relative z-10 space-y-1.5">
           {messages.map((item, idx) => {
             const isMe = item.senderId === currentUser.uid;
             const sender = allUsers.find((u) => u.uid === item.senderId);
@@ -1108,6 +1345,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                   setShowDeleteModal={setShowDeleteModal}
                   highlightedMessageId={highlightedMessageId}
                   onScrollToMessage={handleScrollToMessage}
+                  isSelectionMode={isSelectionMode}
+                  isSelected={selectedMessageIds.includes(item.id)}
+                  onToggleSelect={toggleMessageSelection}
                 />
               </React.Fragment>
             );
@@ -1135,6 +1375,19 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           </div>
         )}
         <div ref={messagesEndRef} />
+        </div>
+
+        {/* Floating Scroll to Bottom Button */}
+        {showScrollBottomBtn && (
+          <button
+            type="button"
+            onClick={() => scrollToBottom(true)}
+            className="absolute bottom-4 right-4 z-30 p-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-full shadow-xl border border-white/20 transition-all transform hover:scale-105 active:scale-95 flex items-center justify-center animate-fadeIn cursor-pointer"
+            title={lang === 'bn' ? 'নিচে যান' : 'Scroll to bottom'}
+          >
+            <ChevronDown className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
       {/* Replying Banner Bar */}
@@ -1394,6 +1647,27 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                     </button>
                   )}
 
+                  {/* Mark / Multi-Select Option */}
+                  <button
+                    onClick={() => {
+                      setShowDeleteModal(false);
+                      setIsSelectionMode(true);
+                      if (selectedMessageForAction) {
+                        setSelectedMessageIds([selectedMessageForAction.id]);
+                      }
+                      setSelectedMessageForAction(null);
+                    }}
+                    className="w-full p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-orange-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700 hover:border-orange-200 dark:hover:border-orange-500/50 rounded-2xl flex items-center gap-3 text-left transition-all text-slate-800 dark:text-slate-200 hover:text-orange-600 dark:hover:text-orange-400 group cursor-pointer"
+                  >
+                    <div className="p-2 bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 rounded-xl group-hover:bg-orange-500 group-hover:text-white transition-colors">
+                      <CheckSquare className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold">{lang === 'bn' ? 'মার্ক করে ডিলেট (Mark/Multi-Select)' : 'Select Multiple Messages'}</div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">{lang === 'bn' ? 'একাধিক মেসেজ টিক দিয়ে একসাথে ডিলেট করুন' : 'Select multiple messages to batch delete'}</div>
+                    </div>
+                  </button>
+
                   {/* Delete for me */}
                   <button
                     onClick={handleDeleteForMe}
@@ -1439,6 +1713,68 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Multi Delete Confirmation Modal */}
+      {showMultiDeleteModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 max-w-sm w-full space-y-4 shadow-2xl animate-fadeIn text-slate-900 dark:text-slate-100">
+            <div className="text-center pb-1 border-b border-slate-100 dark:border-slate-800">
+              <div className="w-12 h-12 rounded-full bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto mb-2">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                {lang === 'bn'
+                  ? `${selectedMessageIds.length} টি মেসেজ ডিলেট করবেন?`
+                  : `Delete ${selectedMessageIds.length} messages?`}
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                {lang === 'bn'
+                  ? 'আপনার পছন্দ অনুযায়ী নিচের যেকোনো একটি অপশন বেছে নিন'
+                  : 'Choose how you want to delete these selected messages'}
+              </p>
+            </div>
+
+            <div className="space-y-2 pt-1">
+              {/* Delete for Me */}
+              <button
+                onClick={handleMultiDeleteForMe}
+                className="w-full p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700 hover:border-amber-200 dark:hover:border-amber-500/50 rounded-2xl flex items-center gap-3 text-left transition-all text-slate-800 dark:text-slate-200 hover:text-amber-600 dark:hover:text-amber-400 group cursor-pointer"
+              >
+                <div className="p-2 bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 rounded-xl group-hover:bg-amber-500 group-hover:text-white transition-colors">
+                  <UserX className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold">{lang === 'bn' ? 'আমার জন্য ডিলেট (Delete for me)' : 'Delete for Me'}</div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400">{lang === 'bn' ? 'শুধু আপনার স্ক্রিন থেকে মুছে ফেলা হবে' : 'Remove only from your view'}</div>
+                </div>
+              </button>
+
+              {/* Delete for Everyone */}
+              <button
+                onClick={handleMultiDeleteForEveryone}
+                className="w-full p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-red-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700 hover:border-red-200 dark:hover:border-red-500/50 rounded-2xl flex items-center gap-3 text-left transition-all text-slate-800 dark:text-slate-200 hover:text-red-600 dark:hover:text-red-400 group cursor-pointer"
+              >
+                <div className="p-2 bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400 rounded-xl group-hover:bg-red-500 group-hover:text-white transition-colors">
+                  <Trash2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold">{lang === 'bn' ? 'সবার জন্য রিমুভ (Remove for Everyone)' : 'Remove for Everyone'}</div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400">{lang === 'bn' ? 'সার্ভার ও চ্যাটবক্স থেকে রিমুভ হয়ে যাবে' : 'Remove from all views and server storage'}</div>
+                </div>
+              </button>
+            </div>
+
+            <div className="pt-1">
+              <button
+                onClick={() => setShowMultiDeleteModal(false)}
+                className="w-full py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                {lang === 'bn' ? 'বাতিল' : 'Cancel'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1498,7 +1834,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               />
               <span
                 className={`absolute bottom-1 right-1 w-4 h-4 rounded-full ring-2 ring-white dark:ring-slate-900 ${
-                  partner.status === 'online' ? 'bg-emerald-500' : 'bg-slate-400'
+                  isUserOnline(partner) ? 'bg-emerald-500' : 'bg-slate-400'
                 }`}
               />
             </div>
@@ -1584,9 +1920,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                   </h3>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                     {partner
-                      ? partner.status === 'online'
+                      ? isUserOnline(partner)
                         ? (lang === 'bn' ? 'সক্রিয় আছেন' : 'Active now')
-                        : (lang === 'bn' ? 'অফলাইন' : 'Offline')
+                        : (lang === 'bn' ? `অফলাইন (${formatLastSeenText(partner.lastSeen, 'bn')})` : `Offline (${formatLastSeenText(partner.lastSeen, 'en')})`)
                       : `${group?.members?.length || 0} ${lang === 'bn' ? 'জন সদস্য' : 'members'}`}
                   </p>
                 </div>

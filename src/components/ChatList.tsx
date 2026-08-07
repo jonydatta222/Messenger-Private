@@ -26,7 +26,8 @@ import {
   getGroupsForUser,
   getLastGroupMessage,
   getUnreadGroupCount,
-  deleteGroup
+  deleteGroup,
+  isUserOnline
 } from '../services/chatService';
 import { decryptMessage } from '../services/encryptionService';
 
@@ -483,7 +484,7 @@ export const ChatList: React.FC<ChatListProps> = ({
                       />
                       <span
                         className={`absolute bottom-0 right-0 w-3 h-3 rounded-full ring-2 ring-white dark:ring-slate-900 ${
-                          partner.status === 'online'
+                          isUserOnline(partner)
                             ? 'bg-emerald-500'
                             : partner.status === 'away'
                             ? 'bg-amber-500'
