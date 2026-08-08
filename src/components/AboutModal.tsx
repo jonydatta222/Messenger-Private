@@ -34,7 +34,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ onClose, lang }) => {
               <ShieldCheck className="w-9 h-9" />
             </div>
             <h2 className="text-lg font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
-              {lang === 'bn' ? 'সিকিউর মেসেঞ্জার' : 'Secure SMS Messenger'}
+              {lang === 'bn' ? 'মেসেঞ্জার+' : 'Messenger+'}
             </h2>
             <span className="px-2.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/80 text-orange-700 dark:text-orange-400 text-[11px] font-bold border border-orange-200 dark:border-orange-800 font-mono">
               Version 2.5.0 Pro
@@ -92,7 +92,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ onClose, lang }) => {
           {/* Footer Note */}
           <div className="text-center pt-2 border-t border-slate-100 dark:border-slate-800">
             <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">
-              © 2026 Secure SMS Messenger. All Rights Reserved.
+              © 2026 Messenger+. All Rights Reserved.
             </p>
             <p className="text-[10px] text-orange-500 font-semibold mt-0.5">
               Designed & Developed by জনি দত্ত (Jony Datta)

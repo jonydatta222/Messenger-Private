@@ -401,30 +401,54 @@ export default function App() {
     const partner = loadedUsers.find((u) => u.uid !== currentUser.uid) || loadedUsers[0];
     if (!partner) return;
 
-    const dummyMsg: Message = {
-      id: 'test_sms_' + Date.now(),
+    const testLines = lang === 'bn' ? [
+      'Oh bujci',
+      'O ma go tai buji',
+      'Toh family sate takbo na',
+      '6 mash hoi gece',
+      'Tai',
+      'Aico',
+      'Toh koi jaibo',
+      'Amr pora sesh toh akon ki korbo',
+      'Hmm',
+      'Kno'
+    ] : [
+      'Oh I see',
+      'Are you serious?',
+      'So won\'t stay with family?',
+      'It\'s been 6 months',
+      'So',
+      'Are you coming?',
+      'Where will I go?',
+      'My study is finished so what to do now',
+      'Hmm',
+      'Why'
+    ];
+
+    const baseTime = Date.now() - 60000;
+    const dummyMsgs: Message[] = testLines.map((line, idx) => ({
+      id: `test_sms_${Date.now()}_${idx}`,
       senderId: partner.uid,
       receiverId: currentUser.uid,
-      text: lang === 'bn' 
-        ? 'হাই! কেমন আছেন? আপনাকে একটি মেসেজ পাঠিয়েছি।'
-        : 'Hi! How are you doing? I sent you a message.',
-      timestamp: Date.now(),
+      text: line,
+      timestamp: baseTime + (idx * 5000),
       read: false,
-    };
+    }));
 
     playNotificationChime();
     triggerVibration();
     setIsFloatingHeadActive(true);
-    setQuickReplyMsg(dummyMsg);
+    setQuickReplyMsg(dummyMsgs[dummyMsgs.length - 1]);
     setQuickReplySender(partner);
 
-    NotificationService.showSmsNotification(partner.displayName, dummyMsg.text);
+    const fullMultiLineText = testLines.join('\n');
+    NotificationService.showSmsNotification(partner.displayName, fullMultiLineText, partner.uid);
     sendSystemNotification(
       partner.displayName,
-      dummyMsg.text,
+      fullMultiLineText,
       partner.photoURL,
       () => {
-        setQuickReplyMsg(dummyMsg);
+        setQuickReplyMsg(dummyMsgs[dummyMsgs.length - 1]);
         setQuickReplySender(partner);
       }
     );
@@ -555,10 +579,15 @@ export default function App() {
             prev?.callId === signal.id ? { ...prev, status: 'connected', startTime: Date.now() } : prev
           );
         } else if (signal.status === 'rejected') {
-          setActiveCall((prev) => (prev?.callId === signal.id ? null : prev));
+          setActiveCall((prev) => {
+            if (prev?.callId === signal.id) {
+              setToastMessage(lang === 'bn' ? 'কলটি রিজেক্ট করা হয়েছে' : 'Call was declined');
+              setTimeout(() => setToastMessage(null), 3500);
+              return null;
+            }
+            return prev;
+          });
           sendCallLogMessage(currentUser.uid, signal.receiverId, signal.type, 'declined', undefined, signal.id);
-          setToastMessage(lang === 'bn' ? 'কলটি রিজেক্ট করা হয়েছে' : 'Call was declined');
-          setTimeout(() => setToastMessage(null), 3500);
         } else if (signal.status === 'ended') {
           setActiveCall((prev) => (prev?.callId === signal.id ? null : prev));
         }
@@ -782,6 +811,10 @@ export default function App() {
           }}
           onTestNotificationReply={triggerTestNotificationReply}
           onLogout={handleRequestLogout}
+          onOpenAbout={() => {
+            setShowAboutModal(true);
+            pushNavState('about');
+          }}
         />
       )}
 
@@ -888,6 +921,18 @@ export default function App() {
             setCurrentUser(updated);
             loadData();
           }}
+          onOpenAbout={() => {
+            setShowAboutModal(true);
+            pushNavState('about');
+          }}
+          lang={lang}
+        />
+      )}
+
+      {/* About App Modal */}
+      {showAboutModal && (
+        <AboutModal
+          onClose={() => safeCloseModal(() => setShowAboutModal(false))}
           lang={lang}
         />
       )}
