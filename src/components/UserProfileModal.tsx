@@ -324,7 +324,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 {onOpenAbout && (
                   <button
                     onClick={() => {
-                      onClose();
                       onOpenAbout();
                     }}
                     className="w-full p-3 bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/5 hover:from-orange-500/20 hover:to-amber-500/20 border border-orange-500/30 rounded-2xl flex items-center justify-between text-left transition-all cursor-pointer group"

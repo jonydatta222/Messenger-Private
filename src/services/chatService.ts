@@ -81,24 +81,48 @@ const saveUsersLocally = (users: UserProfile[]) => {
   broadcastChange();
 };
 
+let inMemoryMessagesCache: Message[] | null = null;
+
 export const getMessages = (): Message[] => {
+  if (inMemoryMessagesCache !== null) {
+    return inMemoryMessagesCache;
+  }
   try {
     const stored = localStorage.getItem(STORAGE_MESSAGES_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed)) {
+        inMemoryMessagesCache = parsed;
         return parsed;
       }
     }
   } catch {
     // fallback
   }
+  inMemoryMessagesCache = [];
   return [];
 };
 
-const saveMessagesLocally = (messages: Message[]) => {
-  localStorage.setItem(STORAGE_MESSAGES_KEY, JSON.stringify(messages));
+let saveMessagesDebounceTimer: any = null;
+const saveMessagesLocally = (messages: Message[], immediate = false) => {
+  inMemoryMessagesCache = messages;
   broadcastChange();
+
+  const doSave = () => {
+    try {
+      localStorage.setItem(STORAGE_MESSAGES_KEY, JSON.stringify(messages));
+    } catch (e) {
+      console.warn('LocalStorage save error:', e);
+    }
+  };
+
+  if (immediate) {
+    if (saveMessagesDebounceTimer) clearTimeout(saveMessagesDebounceTimer);
+    doSave();
+  } else {
+    if (saveMessagesDebounceTimer) clearTimeout(saveMessagesDebounceTimer);
+    saveMessagesDebounceTimer = setTimeout(doSave, 250);
+  }
 };
 
 export const getGroups = (): Group[] => {
@@ -158,11 +182,11 @@ const broadcastChange = () => {
 // Session start timestamp to avoid notifying old messages on cold boot if not in localStorage
 const sessionStartTime = Date.now();
 
-export const processUnseenSmsNotifications = () => {
+export const processUnseenSmsNotifications = (targetMsgs?: Message[]) => {
   const currentAuthUid = getAuthSession();
   if (!currentAuthUid) return;
 
-  const allMsgs = getMessages();
+  const allMsgs = targetMsgs && targetMsgs.length > 0 ? targetMsgs : getMessages();
   if (!allMsgs || allMsgs.length === 0) return;
 
   const users = getUsers();
@@ -321,24 +345,33 @@ export const initFirestoreSync = () => {
     }
   );
 
-  // Real-time listener for Messages collection (Instant Notification Trigger)
+  // Real-time listener for Messages collection (Instant 0ms Notification Trigger)
   onSnapshot(
     collection(db, 'messages'),
     (snapshot) => {
-      const remoteMsgs: Message[] = [];
-      snapshot.forEach((docSnap) => {
-        remoteMsgs.push(docSnap.data() as Message);
+      const localMsgs = getMessages();
+      const msgMap = new Map<string, Message>();
+      localMsgs.forEach((m) => msgMap.set(m.id, m));
+
+      const newOrModifiedMsgs: Message[] = [];
+
+      // Process real-time changes instantly
+      snapshot.docChanges().forEach((change) => {
+        const msg = change.doc.data() as Message;
+        if (msg && msg.id) {
+          msgMap.set(msg.id, msg);
+          if (change.type === 'added' || change.type === 'modified') {
+            newOrModifiedMsgs.push(msg);
+          }
+        }
       });
 
-      if (remoteMsgs.length > 0) {
-        const localMsgs = getMessages();
-        const msgMap = new Map<string, Message>();
-        localMsgs.forEach((m) => msgMap.set(m.id, m));
-        remoteMsgs.forEach((m) => msgMap.set(m.id, m));
+      const updatedList = Array.from(msgMap.values());
+      saveMessagesLocally(updatedList, false);
 
-        const mergedMsgs = Array.from(msgMap.values());
-        saveMessagesLocally(mergedMsgs);
-        processUnseenSmsNotifications();
+      // Trigger 0ms instant notification for new/modified messages
+      if (newOrModifiedMsgs.length > 0) {
+        processUnseenSmsNotifications(newOrModifiedMsgs);
       }
     },
     (error) => {

@@ -45,7 +45,8 @@ import {
   flashDocumentTitle, 
   requestNotificationPermission,
   sendSystemNotification,
-  NotificationService
+  NotificationService,
+  enableBackgroundKeepAlive
 } from './services/notificationService';
 
 export default function App() {
@@ -164,6 +165,7 @@ export default function App() {
     showProfileModal,
     showEncryptionInfoModal,
     showPermissionsGuideModal,
+    showAboutModal,
     showLogoutConfirmModal,
     selectedPartnerId,
     selectedGroupId,
@@ -180,6 +182,7 @@ export default function App() {
       showProfileModal,
       showEncryptionInfoModal,
       showPermissionsGuideModal,
+      showAboutModal,
       showLogoutConfirmModal,
       selectedPartnerId,
       selectedGroupId,
@@ -194,6 +197,7 @@ export default function App() {
     showProfileModal,
     showEncryptionInfoModal,
     showPermissionsGuideModal,
+    showAboutModal,
     showLogoutConfirmModal,
     selectedPartnerId,
     selectedGroupId,
@@ -274,6 +278,11 @@ export default function App() {
       return true;
     }
 
+    if (cur.showAboutModal) {
+      setShowAboutModal(false);
+      return true;
+    }
+
     if (cur.showProfileModal) {
       setShowProfileModal(false);
       return true;
@@ -286,11 +295,6 @@ export default function App() {
 
     if (cur.showPermissionsGuideModal) {
       setShowPermissionsGuideModal(false);
-      return true;
-    }
-
-    if (cur.showAboutModal) {
-      setShowAboutModal(false);
       return true;
     }
 
@@ -478,6 +482,7 @@ export default function App() {
 
   useEffect(() => {
     loadData();
+    enableBackgroundKeepAlive();
 
     const handleUpdate = () => {
       loadData();
@@ -486,6 +491,7 @@ export default function App() {
     const handleAppVisibilityChange = () => {
       const isHidden = typeof document !== 'undefined' ? document.hidden : false;
       setIsOutsideApp(isHidden);
+      enableBackgroundKeepAlive();
       if (isHidden) {
         // Automatically activate Chat Head when minimized
         setIsFloatingHeadActive(true);
@@ -494,15 +500,22 @@ export default function App() {
       }
     };
 
+    const handleUserInteraction = () => {
+      enableBackgroundKeepAlive();
+    };
+
     window.addEventListener('e2ee_messenger_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
     document.addEventListener('visibilitychange', handleAppVisibilityChange);
+    window.addEventListener('click', handleUserInteraction);
+    window.addEventListener('touchstart', handleUserInteraction);
 
     // Capacitor Native App Lifecycle listener for background execution
     let capAppListener: any = null;
     if (Capacitor.isNativePlatform()) {
       CapApp.addListener('appStateChange', ({ isActive }) => {
         setIsOutsideApp(!isActive);
+        enableBackgroundKeepAlive();
         if (!isActive) {
           // Automatically activate Chat Head when minimized on native
           setIsFloatingHeadActive(true);
@@ -514,15 +527,17 @@ export default function App() {
       });
     }
 
-    // Fast Firestore Background Syncing (keeps sync active every 1.5s)
+    // Lightweight 45-second fallback heartbeat (replaces network-choking 1.5s loop)
     const backgroundSyncInterval = setInterval(() => {
-      fetchAllFromFirestore();
-    }, 1500);
+      enableBackgroundKeepAlive();
+    }, 45000);
 
     return () => {
       window.removeEventListener('e2ee_messenger_updated', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
       document.removeEventListener('visibilitychange', handleAppVisibilityChange);
+      window.removeEventListener('click', handleUserInteraction);
+      window.removeEventListener('touchstart', handleUserInteraction);
       if (capAppListener) {
         capAppListener.remove();
       }
@@ -809,7 +824,6 @@ export default function App() {
             setShowPermissionsGuideModal(true);
             pushNavState('permissionsGuide');
           }}
-          onTestNotificationReply={triggerTestNotificationReply}
           onLogout={handleRequestLogout}
           onOpenAbout={() => {
             setShowAboutModal(true);

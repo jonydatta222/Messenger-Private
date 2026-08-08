@@ -198,6 +198,40 @@ export async function onSmsReceived(senderNumber: string, smsText: string) {
 }
 
 // Synthesize pleasant double-chime notification sound using Web Audio API
+export const enableBackgroundKeepAlive = () => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    if (!audioCtx) {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        audioCtx = new AudioContextClass();
+      }
+    }
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
+    }
+  } catch {}
+
+  if (!keepAliveInterval) {
+    keepAliveInterval = setInterval(() => {
+      if (audioCtx && audioCtx.state === 'running') {
+        try {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          gain.gain.setValueAtTime(0.000001, audioCtx.currentTime);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.005);
+        } catch {}
+      }
+    }, 12000);
+  }
+};
+
+let keepAliveInterval: any = null;
+
 export const playNotificationChime = () => {
   try {
     if (typeof window === 'undefined') return;
